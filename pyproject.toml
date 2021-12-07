@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "aoc"
+version = "0.1.0"
+description = "Advent of Code"
+authors = ["Emil Styrke <emil.styrke@gmail.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+requests = "^2.26.0"
+markdownify = "^0.10.0"
+yachalk = "^0.1.5"
+python-dotenv = "^0.19.2"
+scikit-image = "^0.19.0"
+sympy = "^1.9"
+
+[tool.poetry.dev-dependencies]
+black = {version = "^21.11b1", allow-prereleases = true}
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+aoc_get = "aoc.get:main"
+aoc_run = "aoc.run:main"
+aoc_leaderboard = "aoc.leaderboard:main"
