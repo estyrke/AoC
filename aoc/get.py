@@ -27,7 +27,6 @@ def get(year: int, day: int):
     input_url = urljoin(description_url, f"{day}/input")
 
     basedir = os.path.dirname(__file__)
-    html_filename = f"{basedir}/{year}/{day}.html"
     input_filename = f"{basedir}/{year}/{day}_input.txt"
     part1_py_filename = f"{basedir}/{year}/{day}_1.py"
     part2_py_filename = f"{basedir}/{year}/{day}_2.py"
@@ -36,9 +35,16 @@ def get(year: int, day: int):
     puzzle_start = datetime.fromisoformat(
         f"{year}-12-{day:02}T05:00:01+00:00"
     ).astimezone()
-    while datetime.now().astimezone() < puzzle_start:
-        print(datetime.now().astimezone(), puzzle_start)
-        time.sleep(1)
+    try:
+        while datetime.now().astimezone() < puzzle_start:
+            time_left = (puzzle_start - datetime.now().astimezone())
+            print(f"Not availablel yet. Will try again in {time_left}", end="\r")
+            time.sleep(1)
+    except KeyboardInterrupt:
+        sys.exit(1)
+    finally:
+        print()
+
     s = requests.session()
     s.cookies.set("session", session_cookie())
 
