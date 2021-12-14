@@ -5,6 +5,9 @@ import math
 # {desc}
 ###
 
+test_input = """"""
+
+test_output = None
 
 def solve(inp: TextIOWrapper):
     answer = None

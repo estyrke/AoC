@@ -127,7 +127,7 @@ testing = ["pytest (>=6)", "pytest-checkdocs (>=2.4)", "pytest-flake8", "pytest-
 
 [[package]]
 name = "markdownify"
-version = "0.10.0"
+version = "0.10.1"
 description = "Convert HTML to markdown."
 category = "main"
 optional = false
@@ -348,7 +348,7 @@ all = ["imagecodecs (>=2021.7.30)", "matplotlib (>=3.2)", "lxml"]
 
 [[package]]
 name = "tomli"
-version = "1.2.2"
+version = "1.2.3"
 description = "A lil' TOML parser"
 category = "dev"
 optional = false
@@ -441,8 +441,8 @@ importlib-resources = [
     {file = "importlib_resources-5.4.0.tar.gz", hash = "sha256:d756e2f85dd4de2ba89be0b21dba2a3bbec2e871a42a3a16719258a11f87506b"},
 ]
 markdownify = [
-    {file = "markdownify-0.10.0-py3-none-any.whl", hash = "sha256:4b26e2ed7c1113efdf4faa5b31f67ac101dd0c1770979c21e34b20b95a99ef8c"},
-    {file = "markdownify-0.10.0.tar.gz", hash = "sha256:ba7a5eb2a278ef216d77e5abdf4274e8fd816f9a7e80de6a5fb441fada52eaf3"},
+    {file = "markdownify-0.10.1-py3-none-any.whl", hash = "sha256:4458aa5494a4b435edce67c6e2d6807028b0a1861b63dd780172e57f89d878df"},
+    {file = "markdownify-0.10.1.tar.gz", hash = "sha256:821ffdaec75ce6be6eb5006bd4faaa54bf55283e389e7cde5b2fca849fce5b57"},
 ]
 mpmath = [
     {file = "mpmath-1.2.1-py3-none-any.whl", hash = "sha256:604bc21bd22d2322a177c73bdb573994ef76e62edd595d17e00aff24b0667e5c"},
@@ -656,8 +656,8 @@ tifffile = [
     {file = "tifffile-2021.11.2.tar.gz", hash = "sha256:153e31fa1d892f482fabb2ae9f2561fa429ee42d01a6f67e58cee13637d9285b"},
 ]
 tomli = [
-    {file = "tomli-1.2.2-py3-none-any.whl", hash = "sha256:f04066f68f5554911363063a30b108d2b5a5b1a010aa8b6132af78489fe3aade"},
-    {file = "tomli-1.2.2.tar.gz", hash = "sha256:c6ce0015eb38820eaf32b5db832dbc26deb3dd427bd5f6556cf0acac2c214fee"},
+    {file = "tomli-1.2.3-py3-none-any.whl", hash = "sha256:e3069e4be3ead9668e21cb9b074cd948f7b3113fd9c8bba083f48247aab8b11c"},
+    {file = "tomli-1.2.3.tar.gz", hash = "sha256:05b6166bff487dc068d322585c7ea4ef78deed501cc124060e0f238e89a9231f"},
 ]
 typing-extensions = [
     {file = "typing_extensions-4.0.1-py3-none-any.whl", hash = "sha256:7f001e5ac290a0c0401508864c7ec868be4e701886d5b573a9528ed3973d9d3b"},
