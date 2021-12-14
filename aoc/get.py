@@ -1,8 +1,10 @@
+from logging import StreamHandler
 import os
+from typing import cast
 import requests
 from urllib.parse import urljoin
 import sys
-import logging
+from . import logging
 from datetime import datetime
 import time
 import re
@@ -17,7 +19,7 @@ def main():
     year = int(sys.argv[1])
     day = int(sys.argv[2])
 
-    logging.basicConfig(level=logging.INFO)
+    logging.init_logging()
 
     get(year, day)
 
@@ -37,13 +39,16 @@ def get(year: int, day: int):
     ).astimezone()
     try:
         while datetime.now().astimezone() < puzzle_start:
-            time_left = (puzzle_start - datetime.now().astimezone())
-            print(f"Not availablel yet. Will try again in {time_left}", end="\r")
+            time_left = puzzle_start - datetime.now().astimezone()
+            cast(StreamHandler, logger.root.handlers[0]).terminator = "\r"
+            logger.info(f"Not availablel yet. Will try again in {time_left}")
+            cast(StreamHandler, logger.root.handlers[0]).terminator = "\n"
+
             time.sleep(1)
     except KeyboardInterrupt:
         sys.exit(1)
     finally:
-        print()
+        logger.info("")
 
     s = requests.session()
     s.cookies.set("session", session_cookie())

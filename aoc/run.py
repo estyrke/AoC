@@ -1,8 +1,14 @@
-import logging
+from datetime import datetime
+from io import StringIO
+from . import logging
 import os
 import sys
 import importlib
+from time import sleep
+from types import ModuleType
+from typing import Optional
 from urllib.parse import urljoin
+import traceback
 
 import requests
 
@@ -13,39 +19,112 @@ from aoc.get import get
 logger = logging.getLogger(__name__)
 
 
-def run(year: int, day: int, part: int, test=False):
+class Runner:
+    def __init__(self, year: int, day: int, part: int):
+        basedir = os.path.dirname(__file__)
+        self.part_filename = f"{basedir}/{year}/{day}_{part}.py"
+        self.input_filename = f"{basedir}/{year}/{day}_input.txt"
+        self.answer_url = urljoin(base_url(), f"{year}/day/{day}/answer")
+        self.mod_name = f"aoc.{year}.{day}_{part}"
+        self.year = year
+        self.day = day
+        self.part = part
 
-    logging.basicConfig(level=logging.INFO)
+    def run(self, test, watch):
+        if not watch:
+            answer = self.run_once()
+        else:
+            answer = None
+            mtime = None
+            while answer is None:
+                mtime = self.wait_for_change(mtime)
+                answer = self.run_once()
 
-    mod = importlib.import_module(f"aoc.{year}.{day}_{part}")
+        if answer is not None:
+            if test:
+                logger.warning(f"NOT posting answer {answer}")
+                return
+            self.post_and_get_next(answer)
 
-    basedir = os.path.dirname(__file__)
-    with open(f"{basedir}/{year}/{day}_input.txt") as inp:
-        answer = mod.solve(inp)
-
-    if answer is not None:
-        answer_url = urljoin(base_url(), f"{year}/day/{day}/answer")
-
-        if test:
-            print(f"NOT posting answer {answer} to {answer_url}")
-            return
-
+    def post_and_get_next(self, answer):
         s = requests.session()
         s.cookies.set("session", session_cookie())
-        print(f"Posting answer {answer} to {answer_url}")
-        with s.post(answer_url, data={"level": part, "answer": answer}) as u:
+        logger.info(f"Posting answer {answer} to {self.answer_url}")
+        with s.post(self.answer_url, data={"level": self.part, "answer": answer}) as u:
             print(convert_tag_to_md(u.text, "article"))
-            if part == 1 and "That's the right answer" in u.text:
+            if self.part == 1 and "That's the right answer" in u.text:
                 # Download part 2
-                get(year, day)
+                get(self.year, self.day)
+
+    def run_once(self):
+        try:
+            mod = importlib.import_module(self.mod_name)
+            importlib.reload(mod)
+        except SyntaxError:
+            traceback.print_exc()
+            return None
+
+        test_ok = self.run_test(mod)
+
+        if test_ok == False:
+            return None
+        return self.run_real(mod)
+
+    def run_test(self, mod: ModuleType) -> Optional[bool]:
+        test_input = getattr(mod, "test_input", None)
+        test_output = getattr(mod, "test_output", None)
+
+        if not test_input:
+            return None
+
+        test_ok = None
+        try:
+            test_answer = mod.solve(StringIO(mod.test_input))
+        except Exception:
+            traceback.print_exc()
+            test_ok = False
+        else:
+            if test_output is not None and test_answer == test_output:
+                logger.info(f"Test answer was {test_answer} (OK!)")
+                test_ok = True
+            elif test_output is not None and test_answer != test_output:
+                logger.error(f"Test answer was {test_answer}, expected {test_output}")
+                test_ok = False
+            elif test_output is None and test_answer is not None:
+                logger.info(f"Test answer was {test_answer}")
+        return test_ok
+
+    def run_real(self, mod: ModuleType):
+        answer = None
+        with open(self.input_filename) as inp:
+            try:
+                answer = mod.solve(inp)
+            except KeyboardInterrupt:
+                logger.warning("Interrupted!")
+
+        if answer is not None:
+            logger.info(f"Answer is {answer}")
+        else:
+            logger.warning("No answer...")
+        return answer
+
+    def wait_for_change(self, prev_mtime: Optional[datetime]) -> datetime:
+        while True:
+            st = os.stat(self.part_filename)
+            mtime = datetime.fromtimestamp(st.st_mtime)
+
+            if mtime != prev_mtime:
+                return mtime
+            sleep(1)
 
 
 def main():
+    logging.init_logging()
     year = int(sys.argv[1])
     day = int(sys.argv[2])
     part = int(sys.argv[3])
     test = len(sys.argv) >= 5 and sys.argv[4] == "test"
-    run(year, day, part, test)
+    Runner(year, day, part).run(test, True)
 
 
 if __name__ == "__main__":
