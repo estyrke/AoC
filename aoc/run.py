@@ -36,7 +36,9 @@ class Runner:
             get(year, day)
 
         if part == 2:
-            self.answer_part_1 = self.run_once(mod_name_part_1)
+            mod_part_1 = importlib.import_module(mod_name_part_1)
+
+            self.answer_part_1 = self.run_real(mod_part_1)
         else:
             self.answer_part_1 = None
 
@@ -54,11 +56,7 @@ class Runner:
             if test:
                 logger.warning(f"NOT posting answer {answer}")
                 return
-            if self.part == 2 and answer == self.answer_part_1:
-                logger.warning(
-                    f"Answer {answer} for part 2 is the same as for part 1 - NOT posting!"
-                )
-                return
+
             self.post_and_get_next(answer)
 
     def post_and_get_next(self, answer):
@@ -83,7 +81,14 @@ class Runner:
 
         if test_ok == False:
             return None
-        return self.run_real(mod)
+        answer = self.run_real(mod)
+
+        if self.part == 2 and answer == self.answer_part_1:
+            logger.warning(
+                f"Answer {answer} for part 2 is the same as for part 1 - NOT posting!"
+            )
+            return None
+        return answer
 
     def run_test(self, mod: ModuleType) -> Optional[bool]:
         test_input = getattr(mod, "test_input", None)
