@@ -26,23 +26,38 @@ class Runner:
         self.input_filename = f"{basedir}/{year}/{day}_input.txt"
         self.answer_url = urljoin(base_url(), f"{year}/day/{day}/answer")
         self.mod_name = f"aoc.{year}.{day}_{part}"
+        mod_name_part_1 = f"aoc.{year}.{day}_1"
+
         self.year = year
         self.day = day
         self.part = part
 
+        if not os.path.exists(self.part_filename):
+            get(year, day)
+
+        if part == 2:
+            self.answer_part_1 = self.run_once(mod_name_part_1)
+        else:
+            self.answer_part_1 = None
+
     def run(self, test, watch):
         if not watch:
-            answer = self.run_once()
+            answer = self.run_once(self.mod_name)
         else:
             answer = None
             mtime = None
             while answer is None:
                 mtime = self.wait_for_change(mtime)
-                answer = self.run_once()
+                answer = self.run_once(self.mod_name)
 
         if answer is not None:
             if test:
                 logger.warning(f"NOT posting answer {answer}")
+                return
+            if self.part == 2 and answer == self.answer_part_1:
+                logger.warning(
+                    f"Answer {answer} for part 2 is the same as for part 1 - NOT posting!"
+                )
                 return
             self.post_and_get_next(answer)
 
@@ -56,9 +71,9 @@ class Runner:
                 # Download part 2
                 get(self.year, self.day)
 
-    def run_once(self):
+    def run_once(self, mod_name: str):
         try:
-            mod = importlib.import_module(self.mod_name)
+            mod = importlib.import_module(mod_name)
             importlib.reload(mod)
         except SyntaxError:
             traceback.print_exc()
