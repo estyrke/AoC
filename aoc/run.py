@@ -100,6 +100,9 @@ class Runner:
         test_ok = None
         try:
             test_answer = mod.solve(StringIO(mod.test_input))
+        except KeyboardInterrupt:
+            logger.warning("Interrupted")
+            test_ok = False
         except Exception:
             traceback.print_exc()
             test_ok = False
