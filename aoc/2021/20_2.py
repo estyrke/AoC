@@ -27,19 +27,22 @@ test_input = """..#.#..#####.#.#.#.###.##.....###.##.#..###.####..#####..#....#.
 
 
 test_output = 3351
+
 import numpy as np
+import scipy.signal as sig
+
+KERNEL = np.array([[256, 128, 64], [32, 16, 8], [4, 2, 1]])[::-1, ::-1]
 
 
 def solve(inp: TextIOWrapper):
     answer = None
 
-    algo = [1 if p == "#" else 0 for p in inp.readline().strip()]
+    algo = np.array([1 if p == "#" else 0 for p in inp.readline().strip()])
     assert inp.readline().strip() == ""
     image = np.array(
         [[1 if p == "#" else 0 for p in list(l.strip())] for l in inp.readlines()]
     )
 
-    # index_img = np.convolve(image, kernel, )
     image = np.pad(image, 1, constant_values=0)
     for i in range(50):
         image = enhance(image, algo)
@@ -48,15 +51,12 @@ def solve(inp: TextIOWrapper):
 
 
 def enhance(image, algo):
-    kernel = np.array([[256, 128, 64], [32, 16, 8], [4, 2, 1]])
-    out_image = np.full_like(image, algo[0])
     image = np.pad(image, 1, "edge")
-    for y in range(out_image.shape[0]):
-        for x in range(out_image.shape[1]):
-            pv = algo[np.sum(np.multiply(image[y : y + 3, x : x + 3], kernel))]
-            out_image[y, x] = pv
+    out_image = sig.convolve2d(image, KERNEL, mode="valid")
+    out_image = algo[out_image]
+
     out_image = np.pad(
-        out_image, 1, constant_values=algo[np.sum(np.multiply(image[0, 0], kernel))]
+        out_image, 1, constant_values=algo[np.sum(np.multiply(image[0, 0], KERNEL))]
     )
 
     return out_image
