@@ -5,13 +5,14 @@ description = "Advent of Code"
 authors = ["Emil Styrke <emil.styrke@gmail.com>"]
 
 [tool.poetry.dependencies]
-python = "^3.8"
+python = ">=3.8,<3.11"
 requests = "^2.26.0"
 markdownify = "^0.10.0"
 yachalk = "^0.1.5"
 python-dotenv = "^0.19.2"
 scikit-image = "^0.19.0"
 sympy = "^1.9"
+opencv-python = "^4.5.4"
 
 [tool.poetry.dev-dependencies]
 black = {version = "^21.11b1", allow-prereleases = true}

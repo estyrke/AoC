@@ -184,45 +184,34 @@ test_input = """..#.#..#####.#.#.#.###.##.....###.##.#..###.####..#####..#....#.
 
 test_output = 35
 import numpy as np
+import scipy.signal as sig
+
+KERNEL = np.array([[256, 128, 64], [32, 16, 8], [4, 2, 1]])[::-1, ::-1]
 
 
 def solve(inp: TextIOWrapper):
     answer = None
 
-    algo = [1 if p == "#" else 0 for p in inp.readline().strip()]
+    algo = np.array([1 if p == "#" else 0 for p in inp.readline().strip()])
     # print(algo)
     assert inp.readline().strip() == ""
     image = np.array(
         [[1 if p == "#" else 0 for p in list(l.strip())] for l in inp.readlines()]
     )
 
-    # index_img = np.convolve(image, kernel, )
-    print(algo[34])
     image = np.pad(image, 1, constant_values=0)
     out_image = enhance(enhance(image, algo), algo)
-    print(out_image)
     answer = len(out_image[out_image == 1])
-    if answer in [6185, 6275, 7522, 6711, 6233]:
-        print("Invalid", answer)
-        return None
     return len(out_image[out_image == 1])
 
 
 def enhance(image, algo):
-    print(image)
-    kernel = np.array([[256, 128, 64], [32, 16, 8], [4, 2, 1]])
-    out_image = np.full_like(image, algo[0])
     image = np.pad(image, 1, "edge")
-    for y in range(out_image.shape[0]):
-        for x in range(out_image.shape[1]):
-            # print(np.sum(np.multiply(image[y - 1 : y + 2, x - 1 : x + 2], kernel)))
-            # return out_image
-            pv = algo[np.sum(np.multiply(image[y : y + 3, x : x + 3], kernel))]
-            # pv = np.sum(np.multiply(image[y - 1 : y + 2, x - 1 : x + 2], kernel))
-            # print(pv)
-            out_image[y, x] = pv
+    out_image = sig.convolve2d(image, KERNEL, mode="valid")
+    out_image = algo[out_image]
+
     out_image = np.pad(
-        out_image, 1, constant_values=algo[np.sum(np.multiply(image[0, 0], kernel))]
+        out_image, 1, constant_values=algo[np.sum(np.multiply(image[0, 0], KERNEL))]
     )
 
     return out_image
