@@ -59,3 +59,7 @@ def leaderboard_url():
         return None
 
     return f"https://adventofcode.com/{year}/leaderboard/private/view/{board_id}.json"
+
+
+def leaderboard_year() -> int:
+    return int(os.getenv("PRIVATE_LEADERBOARD_YEAR", 0))

@@ -2,15 +2,20 @@ import requests
 from datetime import datetime, timedelta
 from yachalk import chalk
 import sys
+import click
 
-from aoc.util import me, session_cookie, leaderboard_url
+from aoc.util import leaderboard_year, me, session_cookie, leaderboard_url
 
 ME = me()
 FUTURE_TS = (datetime.now() + timedelta(days=1)).timestamp()
 
 
-def main():
-    day = int(sys.argv[1]) if len(sys.argv) > 1 else None
+@click.command()
+@click.option("--day", metavar="DAY", help="sort by completion of DAY")
+@click.option("--count", metavar="N", help="print the top N entries", default=30)
+def main(day: int, count: int):
+    """
+    Prints a private Advent of Code (https://adventofcode.com/) leaderboard"""
 
     s = requests.session()
     if session_cookie() is None:
@@ -26,7 +31,9 @@ def main():
 
     json = r.json()
 
-    today = datetime.now().day
+    last_calendar_day = datetime(year=leaderboard_year(), month=12, day=25)
+    today = min(last_calendar_day, datetime.now()).day
+
     if day is None:
         sort_fn = lambda m: m["local_score"]
         day = today
@@ -54,7 +61,7 @@ def main():
             f"{i+1:3} {m['local_score']:4} {name:30} {m['rank_str']:50} {part1_time}  {part2_time}"
         )
 
-        if (ME is None or found_me) and i + 1 >= 30:
+        if (ME is None or found_me) and i + 1 >= count:
             break
 
 
