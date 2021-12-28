@@ -1,8 +1,5 @@
 from datetime import datetime
 from io import StringIO
-from aoc.get import get
-
-from aoc.legacy_runner import LegacyRunner
 from . import logging
 import os
 import sys
@@ -16,26 +13,34 @@ import traceback
 import requests
 
 from aoc.util import base_url, convert_tag_to_md, session_cookie
+from aoc.get import get
+
 
 logger = logging.getLogger(__name__)
 
 
-class Runner:
+class LegacyRunner:
     def __init__(self, year: int, day: int, part: int):
         basedir = os.path.dirname(__file__)
-        self.solution_filename = f"{basedir}/{year}/{day}.py"
+        self.part_filename = f"{basedir}/{year}/{day}_{part}.py"
         self.input_filename = f"{basedir}/{year}/{day}_input.txt"
         self.answer_url = urljoin(base_url(), f"{year}/day/{day}/answer")
-        self.mod_name = f"aoc.{year}.{day}"
+        self.mod_name = f"aoc.{year}.{day}_{part}"
+        mod_name_part_1 = f"aoc.{year}.{day}_1"
 
         self.year = year
         self.day = day
         self.part = part
 
-        if not os.path.exists(self.solution_filename):
+        if not os.path.exists(self.part_filename):
             get(year, day)
 
-        self.answer_part_1 = None
+        if part == 2:
+            mod_part_1 = importlib.import_module(mod_name_part_1)
+
+            self.answer_part_1 = self.run_real(mod_part_1)
+        else:
+            self.answer_part_1 = None
 
     def run(self, test, watch):
         if not watch:
@@ -52,38 +57,31 @@ class Runner:
                 logger.warning(f"NOT posting answer {answer}")
                 return
 
-            self.post_answer(answer)
+            self.post_and_get_next(answer)
 
-    def post_answer(self, answer):
+    def post_and_get_next(self, answer):
         s = requests.session()
         s.cookies.set("session", session_cookie())
         logger.info(f"Posting answer {answer} to {self.answer_url}")
         with s.post(self.answer_url, data={"level": self.part, "answer": answer}) as u:
             print(convert_tag_to_md(u.text, "article"))
+            if self.part == 1 and "That's the right answer" in u.text:
+                # Download part 2
+                get(self.year, self.day)
 
-    def try_load(self, mod_name):
+    def run_once(self, mod_name: str):
         try:
             mod = importlib.import_module(mod_name)
             importlib.reload(mod)
         except SyntaxError:
             traceback.print_exc()
             return None
-        return mod
-
-    def run_once(self, mod_name: str):
-        mod = self.try_load(mod_name)
-        if mod is None:
-            return None
 
         test_ok = self.run_test(mod)
 
         if test_ok == False:
             return None
-
-        if self.part == 2 and self.answer_part_1 is None:
-            self.answer_part_1 = self.run_real(mod, 1)
-
-        answer = self.run_real(mod, self.part)
+        answer = self.run_real(mod)
 
         if self.part == 2 and answer == self.answer_part_1:
             logger.warning(
@@ -93,15 +91,15 @@ class Runner:
         return answer
 
     def run_test(self, mod: ModuleType) -> Optional[bool]:
-        test_input = getattr(mod, f"part{self.part}_test_input", None)
-        test_output = getattr(mod, f"part{self.part}_test_output", None)
+        test_input = getattr(mod, "test_input", None)
+        test_output = getattr(mod, "test_output", None)
 
         if not test_input:
             return None
 
         test_ok = None
         try:
-            test_answer = mod.__dict__[f"part{self.part}"](StringIO(test_input))
+            test_answer = mod.solve(StringIO(mod.test_input))
         except KeyboardInterrupt:
             logger.warning("Interrupted")
             test_ok = False
@@ -119,25 +117,23 @@ class Runner:
                 logger.info(f"Test answer was {test_answer}")
         return test_ok
 
-    def run_real(self, mod: ModuleType, part: int):
+    def run_real(self, mod: ModuleType):
         answer = None
         with open(self.input_filename) as inp:
             try:
-                answer = mod.__dict__[f"part{part}"](inp)
+                answer = mod.solve(inp)
             except KeyboardInterrupt:
                 logger.warning("Interrupted!")
-            except Exception:
-                logger.error(traceback.format_exc())
 
         if answer is not None:
-            logger.info(f"Part {part} answer is {answer}")
+            logger.info(f"Answer is {answer}")
         else:
             logger.warning("No answer...")
         return answer
 
     def wait_for_change(self, prev_mtime: Optional[datetime]) -> datetime:
         while True:
-            st = os.stat(self.solution_filename)
+            st = os.stat(self.part_filename)
             mtime = datetime.fromtimestamp(st.st_mtime)
 
             if mtime != prev_mtime:
@@ -151,12 +147,7 @@ def main():
     day = int(sys.argv[2])
     part = int(sys.argv[3])
     test = len(sys.argv) >= 5 and sys.argv[4] == "test"
-
-    if year in [2020, 2021]:
-        # 2021 and 2020 used a different file layout (I have been doing AoC retroactively "backwards" from 2021)
-        return LegacyRunner(year, day, part).run(test, True)
-
-    Runner(year, day, part).run(test, True)
+    LegacyRunner(year, day, part).run(test, True)
 
 
 if __name__ == "__main__":
