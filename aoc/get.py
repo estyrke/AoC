@@ -7,9 +7,8 @@ import sys
 from . import logging
 from datetime import datetime
 import time
-import re
 
-from aoc.util import base_url, convert_tag_to_md, session_cookie
+from aoc.util import base_url, session_cookie
 
 
 logger = logging.getLogger(__name__)
@@ -25,13 +24,11 @@ def main():
 
 
 def get(year: int, day: int):
-    description_url = urljoin(base_url(), f"{year}/day/{day}")
-    input_url = urljoin(description_url, f"{day}/input")
+    input_url = urljoin(base_url(), f"{year}/day/{day}/input")
 
     basedir = os.path.dirname(__file__)
     input_filename = f"{basedir}/{year}/{day}_input.txt"
-    part1_py_filename = f"{basedir}/{year}/{day}_1.py"
-    part2_py_filename = f"{basedir}/{year}/{day}_2.py"
+    solution_py_filename = f"{basedir}/{year}/{day}.py"
 
     # Wait for puzzle start
     puzzle_start = datetime.fromisoformat(
@@ -41,7 +38,7 @@ def get(year: int, day: int):
         while datetime.now().astimezone() < puzzle_start:
             time_left = puzzle_start - datetime.now().astimezone()
             cast(StreamHandler, logger.root.handlers[0]).terminator = "\r"
-            logger.info(f"Not availablel yet. Will try again in {time_left}")
+            logger.info(f"Not available yet. Will try again in {time_left}")
             cast(StreamHandler, logger.root.handlers[0]).terminator = "\n"
 
             time.sleep(1)
@@ -63,58 +60,20 @@ def get(year: int, day: int):
             with open(input_filename, "w") as input_txt:
                 input_txt.write(u.text)
 
-    logger.info("Getting description from %s", description_url)
-
-    with s.get(description_url) as u:
-        html = u.text
-
-    desc = convert_tag_to_md(html, "article")
-    desc2 = convert_tag_to_md(html, "article", 2)
-
-    if desc is None:
-        raise RuntimeError(f"Unable to find the first part description!")
-
-    if not os.path.exists(part1_py_filename):
-        logger.info(f"Generating code scaffold for day {day}, part 1")
-        part1_code = make_scaffold(year, day, 1, desc)
-        with open(part1_py_filename, "w") as part1_py:
-            part1_py.write(part1_code)
-
-    if desc2:
-        if not os.path.exists(part2_py_filename):
-            logger.info(f"Generating code scaffold for day {day}, part 2")
-            part2_code = make_scaffold(year, day, 2, desc2)
-            with open(part2_py_filename, "w") as part2_py:
-                part2_py.write(part2_code)
-    else:
-        logger.info("There is no part 2 in the document yet - solve part 1 first")
+    if not os.path.exists(solution_py_filename):
+        logger.info(f"Generating code scaffold for day {day}")
+        code = make_scaffold()
+        with open(solution_py_filename, "w") as solution_py:
+            solution_py.write(code)
 
 
-def make_scaffold(year: int, day: int, level: int, desc: str) -> str:
-    desc = "\n".join([f"# {l}" for l in desc.splitlines()])
+def make_scaffold() -> str:
     basedir = os.path.dirname(__file__)
 
-    if level == 2:
-        # Get existing part 1 code
-        code = get_part1_code(f"{basedir}/{year}/{day}_1.py", desc)
-    else:
-        with open(f"{basedir}/solution_template.py") as tmpl:
-            code = tmpl.read().format(desc=desc)
+    with open(f"{basedir}/solution_template.py") as tmpl:
+        code = tmpl.read()
 
     return code
-
-
-def get_part1_code(part1_filename: str, desc: str):
-    with open(part1_filename) as part1_py:
-        code = part1_py.read()
-
-    code = code.replace("{", "{{").replace("}", "}}")
-    return (
-        re.sub("(?<=###\n).*(?=\n###)", "{desc}", code, 1, re.MULTILINE | re.DOTALL)
-        .format(desc=desc)
-        .replace("{{", "{")
-        .replace("}}", "}")
-    )
 
 
 if __name__ == "__main__":
