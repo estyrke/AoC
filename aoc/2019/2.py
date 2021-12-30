@@ -1,5 +1,6 @@
 from io import TextIOWrapper
 import math
+from .intcode import Machine
 
 """
 ## --- Day 2: 1202 Program Alarm ---
@@ -126,30 +127,9 @@ def part1(inp: TextIOWrapper):
     if opcodes[1] != 9:
         opcodes[1] = 12
         opcodes[2] = 2
-    run(opcodes)
+    Machine(opcodes).run()
 
-    print(opcodes)
     return opcodes[0]
-
-
-def run(memory):
-    ip = 0
-    while memory[ip] != 99:
-        op = memory[ip]
-        if op == 1:
-            par1 = memory[ip + 1]
-            par2 = memory[ip + 2]
-            par3 = memory[ip + 3]
-            memory[par3] = memory[par1] + memory[par2]
-            ip += 4
-        elif op == 2:
-            par1 = memory[ip + 1]
-            par2 = memory[ip + 2]
-            par3 = memory[ip + 3]
-            memory[par3] = memory[par1] * memory[par2]
-            ip += 4
-        else:
-            assert False, "Illegal instruction"
 
 
 """
@@ -219,7 +199,7 @@ def part2(inp: TextIOWrapper):
             c = list(memory)
             c[1] = noun
             c[2] = verb
-            run(c)
+            Machine(c).run()
             answer = c[0]
             if answer == 19690720:
                 return c[1] * 100 + c[2]
