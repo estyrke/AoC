@@ -1,3 +1,4 @@
+import itertools
 from typing import List, NamedTuple, Sequence, SupportsIndex, Tuple, overload
 from enum import Enum
 from collections import namedtuple
@@ -10,26 +11,45 @@ class ParamMode(Enum):
     IMMEDIATE = 1
 
 
-Addr = namedtuple("Addr", "addr mode")
+class Addr:
+    addr: int
+    mode: ParamMode
+
+    def __init__(self, addr: int, mode: ParamMode):
+        self.addr = addr
+        self.mode = mode
 
 
 class Memory:
     def __init__(self, mem: List[int]):
         self._mem = mem
+        self._relative_base = 0
 
     def store(self, dst: Addr, value: int):
-        if dst[1] is None or dst[1] == 0:
-            self._mem[dst[0]] = value
+        if dst.mode is None or dst.mode == 0:
+            self[dst.addr] = value
+        elif dst.mode == 2:  # Relative
+            self[dst.addr + self._relative_base] = value
         else:
-            assert False, f"Invalid param mode {dst[1]} for dst"
+            assert False, f"Invalid param mode {dst.mode} for dst"
 
     def load(self, src: Addr) -> int:
-        if src[1] is None or src[1] == 0:  # position mode
-            return self._mem[src[0]]
-        elif src[1] == 1:  # Immediate
-            return src[0]
+        if src.mode is None or src.mode == 0:  # position mode
+            return self[src.addr]
+        elif src.mode == 1:  # Immediate
+            return src.addr
+        elif src.mode == 2:  # Relative
+            return self[src.addr + self._relative_base]
         else:
-            assert False, f"Invalid param mode {src[1]} for src"
+            assert False, f"Invalid param mode {src.mode} for src"
+
+    @property
+    def relative_base(self):
+        return self._relative_base
+
+    @relative_base.setter
+    def relative_base(self, base: int):
+        self._relative_base = base
 
     @overload
     def __getitem__(self, idx: slice) -> List[int]:
@@ -40,7 +60,24 @@ class Memory:
         ...
 
     def __getitem__(self, idx):  # type: ignore
+        if isinstance(idx, slice):
+            assert idx.stop < len(self._mem)
+        else:
+            if idx >= len(self._mem):
+                return 0
         return self._mem.__getitem__(idx)
+
+    def grow(self, size):
+        assert size < 10 * 2 ** 20, f"Too large block allocation {size/2**20} MiB"
+
+        if size > len(self._mem):
+            self._mem[len(self._mem) : size] = itertools.repeat(
+                0, size - len(self._mem)
+            )
+
+    def __setitem__(self, idx: int, value: int):
+        self.grow(idx + 1)
+        return self._mem.__setitem__(idx, value)
 
 
 class Instr:
@@ -152,6 +189,15 @@ class CompareEq(Compare):
     compare = operator.eq
 
 
+class AdjustBase(Instr):
+    opcode = 9
+    nparams = 1
+
+    def execute(self, machine: "Machine", params: List[Addr]):
+        memory = machine.memory
+        memory.relative_base += memory.load(params[0])
+
+
 class Stop(Instr):
     opcode = 99
     nparams = 0
@@ -177,6 +223,7 @@ class Machine:
     def reset(self):
         self.ip = 0
         self.halted = False
+        self.memory.relative_base = 0
 
     def run(self, input=[]):
         self.input_it = iter(input)
