@@ -1,5 +1,7 @@
 from io import TextIOWrapper
 import math
+import functools
+import itertools
 
 part1_test_input = """"""
 

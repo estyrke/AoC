@@ -15,6 +15,7 @@ sympy = "^1.9"
 opencv-python = "^4.5.4"
 click = "^8.0.3"
 z3-solver = "^4.8.14"
+tcod = "^13.2.0"
 
 [tool.poetry.dev-dependencies]
 black = {version = "^21.11b1", allow-prereleases = true}
