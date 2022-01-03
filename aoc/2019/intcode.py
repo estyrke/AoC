@@ -1,3 +1,4 @@
+from io import TextIOWrapper
 import itertools
 from typing import List, NamedTuple, Sequence, SupportsIndex, Tuple, overload
 from enum import Enum
@@ -217,8 +218,12 @@ class Machine:
         self.halted = False
 
     @classmethod
-    def from_str(cls, mem_str):
+    def from_str(cls, mem_str) -> "Machine":
         return cls(list(map(int, mem_str.strip().split(","))))
+
+    @classmethod
+    def from_stream(cls, stream: TextIOWrapper) -> "Machine":
+        return cls.from_str(stream.read())
 
     def reset(self):
         self.ip = 0
