@@ -5,6 +5,7 @@ from enum import Enum
 from collections import namedtuple
 from itertools import zip_longest
 import operator
+import re
 
 
 class ParamMode(Enum):
@@ -20,6 +21,34 @@ class Addr:
         self.addr = addr
         self.mode = mode
 
+    def code(self):
+        if self.mode is None or self.mode == 0:
+            return f"mem[{self.addr}]"
+        elif self.mode == 1:  # Immediate
+            return str(self.addr)
+        elif self.mode == 2:  # Relative
+            return f"mem[bp + {self.addr}]"
+        else:
+            assert False, f"Invalid param mode {self.mode} for dst"
+
+    def store(self, mem: "Memory", value: int):
+        if self.mode is None or self.mode == 0:
+            mem[self.addr] = value
+        elif self.mode == 2:  # Relative
+            mem[self.addr + mem.relative_base] = value
+        else:
+            assert False, f"Invalid param mode {self.mode} for store"
+
+    def load(self, mem: "Memory") -> int:
+        if self.mode is None or self.mode == 0:  # position mode
+            return mem[self.addr]
+        elif self.mode == 1:  # Immediate
+            return self.addr
+        elif self.mode == 2:  # Relative
+            return mem[self.addr + mem.relative_base]
+        else:
+            assert False, f"Invalid param mode {self.mode} for load"
+
 
 class Memory:
     def __init__(self, mem: List[int]):
@@ -27,22 +56,10 @@ class Memory:
         self._relative_base = 0
 
     def store(self, dst: Addr, value: int):
-        if dst.mode is None or dst.mode == 0:
-            self[dst.addr] = value
-        elif dst.mode == 2:  # Relative
-            self[dst.addr + self._relative_base] = value
-        else:
-            assert False, f"Invalid param mode {dst.mode} for dst"
+        dst.store(self, value)
 
     def load(self, src: Addr) -> int:
-        if src.mode is None or src.mode == 0:  # position mode
-            return self[src.addr]
-        elif src.mode == 1:  # Immediate
-            return src.addr
-        elif src.mode == 2:  # Relative
-            return self[src.addr + self._relative_base]
-        else:
-            assert False, f"Invalid param mode {src.mode} for src"
+        return src.load(self)
 
     @property
     def relative_base(self):
@@ -83,6 +100,7 @@ class Memory:
 
 class Instr:
     opcode = None
+    mnemonic = "???"
     nparams = 0
     ops = {}
 
@@ -94,6 +112,10 @@ class Instr:
     def execute(self, machine: "Machine", params: List[Addr]):
         raise NotImplementedError()
 
+    def code(self, params: List[Addr]):
+        param_strs = [param.code() for param in params]
+        return f"{self.mnemonic} {', '.join(param_strs)}"
+
     @classmethod
     def get(cls, opcode) -> "Instr":
         return cls.ops[opcode]()
@@ -101,6 +123,7 @@ class Instr:
 
 class Add(Instr):
     opcode = 1
+    mnemonic = "add"
     nparams = 3
 
     def execute(self, machine: "Machine", params: List[Addr]):
@@ -110,6 +133,7 @@ class Add(Instr):
 
 class Mul(Instr):
     opcode = 2
+    mnemonic = "mul"
     nparams = 3
 
     def execute(self, machine: "Machine", params: List[Addr]):
@@ -119,6 +143,7 @@ class Mul(Instr):
 
 class Inp(Instr):
     opcode = 3
+    mnemonic = "inp"
     nparams = 1
 
     def execute(self, machine: "Machine", params: List[Addr]):
@@ -136,6 +161,7 @@ class Inp(Instr):
 
 class Out(Instr):
     opcode = 4
+    mnemonic = "outp"
     nparams = 1
 
     def execute(self, machine: "Machine", params: List[Addr]):
@@ -145,6 +171,7 @@ class Out(Instr):
 
 class JumpIfTrue(Instr):
     opcode = 5
+    mnemonic = "jnz"
     nparams = 2
 
     def execute(self, machine: "Machine", params: List[Addr]):
@@ -155,6 +182,7 @@ class JumpIfTrue(Instr):
 
 class JumpIfFalse(Instr):
     opcode = 6
+    mnemonic = "jz"
     nparams = 2
 
     def execute(self, machine: "Machine", params: List[Addr]):
@@ -182,16 +210,19 @@ class Compare(Instr):
 
 class CompareLt(Compare):
     opcode = 7
+    mnemonic = "cmplt"
     compare = operator.lt
 
 
 class CompareEq(Compare):
     opcode = 8
+    mnemonic = "cmpeq"
     compare = operator.eq
 
 
 class AdjustBase(Instr):
     opcode = 9
+    mnemonic = "base"
     nparams = 1
 
     def execute(self, machine: "Machine", params: List[Addr]):
@@ -201,6 +232,7 @@ class AdjustBase(Instr):
 
 class Stop(Instr):
     opcode = 99
+    mnemonic = "stop"
     nparams = 0
 
     def execute(self, machine: "Machine", params: List[Addr]):
@@ -252,3 +284,68 @@ class Machine:
 
             instr.execute(self, params)
         return self.output
+
+    def disasm(self, data_chunk_len: int = 8) -> str:
+        """
+        Disassemble the program.
+
+        Assumes there is first a block of code and then (when first encountering a value that is not a legal instruction)
+        a block of data."""
+        code = []
+        data_start = 0
+        ip = 0
+        while ip < len(self.memory._mem):
+            op = self.memory[ip]
+            try:
+                instr = Instr.get(op % 100)
+            except KeyError as e:
+                # print(f"Illegal instruction {op % 100} at {ip}")
+                data_start = ip
+
+                break
+
+            param_modes = list(map(int, f"{op // 100:0{instr.nparams}}"))
+            params = [
+                Addr(value, mode)
+                for value, mode in zip_longest(
+                    self.memory[ip + 1 : ip + 1 + instr.nparams],
+                    reversed(param_modes),
+                )
+            ][: instr.nparams]
+            code.append(f"{ip:5} {instr.code(params)}")
+
+            ip += 1 + instr.nparams
+
+        code = "\n".join(code)
+
+        # Resolve memory addresses
+        addrs = re.findall("mem\\[(\\d+)\\]", code)
+        addrs = set(int(m) for m in addrs)
+        var_block = ""
+        for i, addr in enumerate(sorted(addrs)):
+            if addr > data_start:
+                value = self.memory[addr]
+                var_block += f"@var_{i} = mem[{addr}]  # {value}\n"
+                code = code.replace(f"mem[{addr}]", f"var_{i}")
+            else:
+                print(f"Warning: addressing {addr} inside code block!")
+        code = var_block + code
+
+        # Resolve jumps
+        jumps = re.findall("jn?z (\\w+), (\\w+)", code)
+        jump_dests = {int(m[1]): f"label_{i}" for i, m in enumerate(jumps)}
+        for dest, label in jump_dests.items():
+            code = re.sub(
+                f"(jn?z \\w+, ){dest}$", f"\\1{label}", code, flags=re.MULTILINE
+            )
+            code = re.sub(f"^(\\s*{dest} )", f"{label}:\n\\1", code, flags=re.MULTILINE)
+
+        # Append data block
+        while data_start < len(self.memory._mem):
+            chunk = [
+                f"{x:02}"
+                for x in self.memory._mem[data_start : data_start + data_chunk_len]
+            ]
+            code += f"\n{data_start:5} data {', '.join(chunk)}"
+            data_start += data_chunk_len
+        return code
