@@ -1,50 +1,65 @@
 from io import TextIOWrapper
 import itertools
-from typing import List, NamedTuple, Sequence, SupportsIndex, Tuple, overload
-from enum import Enum
+from typing import (
+    Dict,
+    List,
+    NamedTuple,
+    Optional,
+    Sequence,
+    Set,
+    SupportsIndex,
+    Tuple,
+    overload,
+)
+from enum import Enum, IntEnum
 from collections import namedtuple
 from itertools import zip_longest
 import operator
 import re
 
 
-class ParamMode(Enum):
+class ParamMode(IntEnum):
     POSITION = 0
     IMMEDIATE = 1
+    RELATIVE = 2
 
 
 class Addr:
     addr: int
     mode: ParamMode
+    name: Optional[str]
 
     def __init__(self, addr: int, mode: ParamMode):
         self.addr = addr
         self.mode = mode
+        self.name = None
 
     def code(self):
-        if self.mode is None or self.mode == 0:
+        if self.name is not None:
+            return self.name
+        if self.mode is None or self.mode == ParamMode.POSITION:
             return f"mem[{self.addr}]"
-        elif self.mode == 1:  # Immediate
+        elif self.mode == ParamMode.IMMEDIATE:
             return str(self.addr)
-        elif self.mode == 2:  # Relative
+        elif self.mode == ParamMode.RELATIVE:
             return f"mem[bp + {self.addr}]"
         else:
             assert False, f"Invalid param mode {self.mode} for dst"
 
     def store(self, mem: "Memory", value: int):
-        if self.mode is None or self.mode == 0:
+        if self.mode is None or self.mode == ParamMode.POSITION:
             mem[self.addr] = value
-        elif self.mode == 2:  # Relative
+        elif self.mode == ParamMode.RELATIVE:  # Relative
             mem[self.addr + mem.relative_base] = value
         else:
             assert False, f"Invalid param mode {self.mode} for store"
 
     def load(self, mem: "Memory") -> int:
-        if self.mode is None or self.mode == 0:  # position mode
+        if self.mode is None or self.mode == ParamMode.POSITION:
             return mem[self.addr]
-        elif self.mode == 1:  # Immediate
+        elif self.mode == ParamMode.IMMEDIATE:
             return self.addr
-        elif self.mode == 2:  # Relative
+        elif self.mode == ParamMode.RELATIVE:
             return mem[self.addr + mem.relative_base]
         else:
             assert False, f"Invalid param mode {self.mode} for load"
@@ -79,11 +94,14 @@ class Memory:
 
     def __getitem__(self, idx):  # type: ignore
         if isinstance(idx, slice):
-            assert idx.stop < len(self._mem)
+            assert idx.stop is None or idx.stop < len(self._mem)
         else:
             if idx >= len(self._mem):
                 return 0
         return self._mem.__getitem__(idx)
+
+    def __len__(self):
+        return len(self._mem)
 
     def grow(self, size):
         assert size < 10 * 2 ** 20, f"Too large block allocation {size/2**20} MiB"
@@ -240,6 +258,10 @@ class Stop(Instr):
         machine.halted = True
 
 
+InstrLine = Tuple[int, Instr, List[Addr]]
+InstrList = List[InstrLine]
+
+
 class Machine:
     def __init__(self, memory: List[int]):
         self.memory = Memory(memory)
@@ -268,9 +290,10 @@ class Machine:
         self.running = True
         while self.running:
             instr = Instr.get(self.memory[self.ip] % 100)
-            param_modes = list(
-                map(int, f"{self.memory[self.ip] // 100:0{instr.nparams}}")
-            )
+            param_modes = [
+                ParamMode(int(m))
+                for m in f"{self.memory[self.ip] // 100:0{instr.nparams}}"
+            ]
             self.ip += 1
             params = [
                 Addr(value, mode)
@@ -285,23 +308,216 @@ class Machine:
             instr.execute(self, params)
         return self.output
 
-    def disasm(self, data_chunk_len: int = 8) -> str:
+    def disasm(self) -> str:
+        return Disassembler(self.memory).to_string()
+
+
+class Disassembler:
+    class Data(Instr):
+        opcode = -1
+        mnemonic = "data"
+
+        def __init__(self, first_data: int):
+            self.opcode = first_data
+
+        def code(self, params: List[Addr]):
+            param_strs = [param.code() for param in params]
+            return f"{self.mnemonic} {self.opcode}, {', '.join(param_strs)}"
+
+    def __init__(self, memory: Memory):
+        self.memory = memory
+        self.disasm()
+
+    def disasm(self) -> InstrList:
         """
         Disassemble the program.
 
         Assumes there is first a block of code and then (when first encountering a value that is not a legal instruction)
-        a block of data."""
-        code = []
-        data_start = 0
-        ip = 0
+        a block of data.  When there are jumps into data then a new code block is generated at the target address."""
+
+        self.label_idx = 0
+        self.jump_dests = {}
+        self.var_idx = 0
+        self.pvar_idx = 0
+        self.addrs = {}
+        self.pvar_addrs = {}
+        self.code, block_end = self.disasm_at_addr(0)
+
+        while True:
+            # Resolve jumps
+            new_code_starts = self.find_data_jumps()
+
+            if len(new_code_starts) == 0:
+                break
+            new_code_start = sorted(new_code_starts)[0]
+            self.code.append(self.make_data_instr(block_end, new_code_start))
+            new_code, block_end = self.disasm_at_addr(new_code_start)
+            self.code += new_code
+
+        if block_end < len(self.memory):
+            self.code.append(self.make_data_instr(block_end))
+
+        self.var_block, self.local_var_blocks = self.resolve_vars()
+
+    def to_string(self):
+        return self.var_block + "\n".join(
+            f"{self.label(ip)}{ip:5} {instr.code(params)}"
+            for ip, instr, params in self.code
+        )
+
+    def find_data_jumps(self):
+        jumps_into_data: Set[int] = set()
+        for ip, instr, params in self.code:
+            if instr.mnemonic in ["jz", "jnz"]:
+                if params[1].mode != ParamMode.IMMEDIATE:
+                    if params[1].mode != ParamMode.RELATIVE or params[1].addr != 0:
+                        print(
+                            f"Warning: dynamic jump from address {ip} to {params[1].code()}"
+                        )
+                    continue
+                self.label_idx += 1
+                dest = params[1].addr
+                if dest not in self.jump_dests:
+                    self.jump_dests[dest] = f"label_{self.label_idx}"
+                if not self.addr_is_in_code(dest, expect_jump_target=True):
+                    jumps_into_data.add(dest)
+                params[1].name = self.jump_dests[dest]
+
+        return jumps_into_data
+
+    def make_data_instr(self, start: int, end=None) -> InstrLine:
+        return (
+            start,
+            Disassembler.Data(self.memory[start]),
+            [Addr(a, ParamMode.IMMEDIATE) for a in self.memory[start + 1 : end]],
+        )
+
+    def label(self, ip: int):
+        labeled = ""
+        if ip in self.jump_dests:
+            labeled += f"{self.jump_dests[ip]}:\n"
+        if ip in self.local_var_blocks:
+            labeled += self.local_var_blocks[ip]
+        return labeled
+
+    def resolve_vars(self):
+        var_block = ""
+        local_vars = []
+        local_var_blocks = {}
+        local_var_addr = 0
+        relative_base = 0
+        for ip, instr, params in self.code:
+            if instr.mnemonic == "base":
+                if params[0].mode != ParamMode.IMMEDIATE:
+                    print("Warning: Dynamic base pointer adjustment not supported!")
+                    continue
+                base_adj = params[0].addr
+                if base_adj == -len(local_vars):
+                    local_vars = []
+                    local_var_addr = 0
+                elif relative_base != 0:
+                    if self.addr_is_in_code(relative_base):
+                        print(
+                            f"Warning: Relative base pointer {relative_base} is inside code block!"
+                        )
+                    # Disregard first base pointer set
+                    local_vars = [None] * base_adj
+                    local_var_addr = ip
+                    local_var_blocks[local_var_addr] = ""
+                relative_base += base_adj
+            for param_idx, p in enumerate(params):
+                if p.mode == ParamMode.POSITION:
+                    var_block += self.resolve_position_var(
+                        p, param_idx == len(params) - 1
+                    )
+                elif p.mode == ParamMode.RELATIVE and local_var_addr != 0:
+                    local_var_blocks[local_var_addr] += self.resolve_relative_var(
+                        p, local_vars
+                    )
+        return var_block, local_var_blocks
+
+    def resolve_position_var(self, p: Addr, is_write: bool) -> str:
+        instr = self.instr_at_address(p.addr)
+        var_def = ""
+        if p.name:
+            # This parameter has already been named as a target of another pvar
+            return ""
+        if instr is not None and instr[1].mnemonic != "data":
+            ip, instr, params = instr
+            if ip == p.addr:
+                print(f"Warning: adressing opcode of {instr.code(params)} at {p.addr}")
+                return ""
+            if p.addr not in self.pvar_addrs:
+                self.pvar_idx += 1
+                self.pvar_addrs[p.addr] = f"pvar_{self.pvar_idx}"
+            param_modified = params[p.addr - ip - 1]
+            param_modified.name = param_modified.code().replace(
+                str(param_modified.addr), self.pvar_addrs[p.addr]
+            )
+            p.name = self.pvar_addrs[p.addr]
+        else:
+            if p.addr not in self.addrs:
+                self.var_idx += 1
+                self.addrs[p.addr] = f"var_{self.var_idx}"
+                value = self.memory[p.addr]
+                var_def = f"@{self.addrs[p.addr]} = mem[{p.addr}]  # {value}\n"
+
+            p.name = self.addrs[p.addr]
+        return var_def
+
+    def resolve_relative_var(self, p, local_vars):
+        lvar_def = ""
+        local_addr = -p.addr
+        if local_addr <= 0:
+            # New function call; ignore
+            return lvar_def
+
+        if local_addr > len(local_vars):
+            print(
+                f"Warning: Local addressing {-p.addr} outside stack segment of size {len(local_vars)}"
+            )
+            return ""
+
+        if local_vars[local_addr] is None:
+            local_vars[local_addr] = f"lvar_{local_addr}"
+            lvar_def = f"@{local_vars[local_addr]} = {p.code()}\n"
+
+        p.name = local_vars[local_addr]
+        return lvar_def
+
+    def instr_at_address(self, addr: int) -> Optional[InstrLine]:
+        for (ip, instr, p) in self.code:
+            if ip <= addr <= ip + len(p):
+                return ip, instr, p
+        return None
+
+    def addr_is_in_code(self, addr: int, *, expect_jump_target=False) -> bool:
+        instr = self.instr_at_address(addr)
+        if instr is None:
+            return False
+
+        ip, instr, p = instr
+        if instr.mnemonic == "data":
+            if expect_jump_target:
+                print(
+                    f"Warning: jump target {addr} is in existing data block (at {ip}-{ip + len(p)})! This is not supperted."
+                )
+            return False
+        if addr != ip and expect_jump_target:
+            print(
+                f"Warning: address {addr} does not target opcode! ({instr.code(p)} is at {ip})"
+            )
+        return True
+
+    def disasm_at_addr(self, ip: int) -> Tuple[InstrList, int]:
+        code: InstrList = []
+        data_start = -1
         while ip < len(self.memory._mem):
             op = self.memory[ip]
             try:
                 instr = Instr.get(op % 100)
             except KeyError as e:
-                # print(f"Illegal instruction {op % 100} at {ip}")
                 data_start = ip
-
                 break
 
             param_modes = list(map(int, f"{op // 100:0{instr.nparams}}"))
@@ -312,40 +528,8 @@ class Machine:
                     reversed(param_modes),
                 )
             ][: instr.nparams]
-            code.append(f"{ip:5} {instr.code(params)}")
+            code.append((ip, instr, params))
 
             ip += 1 + instr.nparams
 
-        code = "\n".join(code)
-
-        # Resolve memory addresses
-        addrs = re.findall("mem\\[(\\d+)\\]", code)
-        addrs = set(int(m) for m in addrs)
-        var_block = ""
-        for i, addr in enumerate(sorted(addrs)):
-            if addr > data_start:
-                value = self.memory[addr]
-                var_block += f"@var_{i} = mem[{addr}]  # {value}\n"
-                code = code.replace(f"mem[{addr}]", f"var_{i}")
-            else:
-                print(f"Warning: addressing {addr} inside code block!")
-        code = var_block + code
-
-        # Resolve jumps
-        jumps = re.findall("jn?z (\\w+), (\\w+)", code)
-        jump_dests = {int(m[1]): f"label_{i}" for i, m in enumerate(jumps)}
-        for dest, label in jump_dests.items():
-            code = re.sub(
-                f"(jn?z \\w+, ){dest}$", f"\\1{label}", code, flags=re.MULTILINE
-            )
-            code = re.sub(f"^(\\s*{dest} )", f"{label}:\n\\1", code, flags=re.MULTILINE)
-
-        # Append data block
-        while data_start < len(self.memory._mem):
-            chunk = [
-                f"{x:02}"
-                for x in self.memory._mem[data_start : data_start + data_chunk_len]
-            ]
-            code += f"\n{data_start:5} data {', '.join(chunk)}"
-            data_start += data_chunk_len
-        return code
+        return code, data_start
