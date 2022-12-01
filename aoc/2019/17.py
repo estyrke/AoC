@@ -1,7 +1,9 @@
-from io import TextIOWrapper
+import cProfile
+from io import StringIO, TextIOWrapper
 import math
 import functools
 import itertools
+from typing import Iterable, List
 from .intcode import Machine
 
 part1_test_input = """"""
@@ -17,8 +19,8 @@ def part1(inp: TextIOWrapper):
     # print(m.disasm())
     outp = m.run()
 
-    img = "".join(map(chr, outp))
-    # print(img)
+    img = ascii(outp)
+    print(img)
 
     img = img.splitlines()[:-1]
 
@@ -37,6 +39,14 @@ def part1(inp: TextIOWrapper):
     return answer
 
 
+def ascii(outp):
+    return "".join(map(chr, outp))
+
+
+def to_ascii(s: str) -> Iterable[int]:
+    return map(ord, s)
+
+
 part2_test_input = part1_test_input
 
 part2_test_output = None
@@ -45,7 +55,40 @@ part2_test_output = None
 def part2(inp: TextIOWrapper):
     m = Machine.from_stream(inp)
     m.memory[0] = 2
+
     score = 0
+    A = "L,12,L,12,R,12\n"
+    B = "L,8,L,8,R,12,L,8,L,8\n"
+    C = "L,10,R,8,R,12\n"
+    main = "A,A,B,C,C,A,B,C,A,B\n"
+
+    print(ascii(m.run([])))
+    print(ascii(m.run(to_ascii(main))))
+    print(ascii(m.run(to_ascii(A))))
+    print(ascii(m.run(to_ascii(B))))
+    print(ascii(m.run(to_ascii(C))))
+
+    b = StringIO()
+    answer = None
+    prev = None
+
+    def printer(x):
+        nonlocal b, prev, answer
+        if x > 255:
+            answer = x
+            return
+
+        if prev == x == 10:
+            print(b.getvalue()[:-1], end="")
+            b = StringIO()
+        else:
+            b.write(chr(x))
+
+        prev = x
+
+    m.run(to_ascii("y\n"), output_callback=printer)
+    assert m.halted
+    return answer
 
     # Decompress board (RLE compressed at 1182)
     board = []
@@ -64,6 +107,6 @@ def part2(inp: TextIOWrapper):
                 board_ptr = 1533 + y_pos * 47 + x_pos
                 score += board_ptr + x_pos * y_pos + scaffolds_visited
 
-    print(m.disasm())
+    # print(m.disasm())
 
     return score

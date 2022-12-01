@@ -1,3 +1,4 @@
+import functools
 from io import TextIOWrapper
 import itertools
 from typing import (
@@ -10,6 +11,7 @@ from typing import (
     SupportsIndex,
     Tuple,
     overload,
+    Callable,
 )
 from enum import Enum, IntEnum
 from collections import namedtuple
@@ -18,10 +20,74 @@ import operator
 import re
 
 
-class ParamMode(IntEnum):
-    POSITION = 0
-    IMMEDIATE = 1
-    RELATIVE = 2
+class PositionParam:
+    @staticmethod
+    def store(mem: "Memory", addr: int, value: int):
+        try:
+            mem._mem[addr] = value
+        except IndexError:
+            mem.grow(addr + 1)
+            mem._mem[addr] = value
+
+    @staticmethod
+    def load(mem: "Memory", addr: int) -> int:
+        return mem._mem[addr]
+
+    @staticmethod
+    def code(addr: int) -> str:
+        return f"mem[{addr}]"
+
+
+class ImmediateParam:
+    @staticmethod
+    def store(mem: "Memory", addr: int, value: int):
+        assert False, f"Invalid param mode Immediate for store"
+
+    @staticmethod
+    def load(mem: "Memory", addr: int) -> int:
+        return addr
+
+    @staticmethod
+    def code(addr: int) -> str:
+        return str(addr)
+
+
+class RelativeParam:
+    @staticmethod
+    def store(mem: "Memory", addr: int, value: int):
+        try:
+            mem._mem[addr + mem.relative_base] = value
+        except IndexError:
+            mem.grow(addr + mem.relative_base + 1)
+            mem._mem[addr + mem.relative_base] = value
+
+    @staticmethod
+    def load(mem: "Memory", addr: int) -> int:
+        return mem._mem[addr + mem.relative_base]
+
+    @staticmethod
+    def code(addr: int) -> str:
+        return f"mem[bp + {addr}]"
+
+
+class ParamMode(Enum):
+    POSITION = (0, PositionParam)
+    IMMEDIATE = (1, ImmediateParam)
+    RELATIVE = (2, RelativeParam)
+
+    store: Callable[["Memory", int, int], None]
+    load: Callable[["Memory", int], int]
+    code: Callable[[int], str]
+
+    def __new__(cls, value, mode_cls):
+        obj = object.__new__(cls)
+
+        obj._value_ = value
+        obj.store = mode_cls.store
+        obj.load = mode_cls.load
+        obj.code = mode_cls.code
+
+        return obj
 
 
 class Addr:
@@ -37,32 +103,13 @@ class Addr:
     def code(self):
         if self.name is not None:
             return self.name
-        if self.mode is None or self.mode == ParamMode.POSITION:
-            return f"mem[{self.addr}]"
-        elif self.mode == ParamMode.IMMEDIATE:
-            return str(self.addr)
-        elif self.mode == ParamMode.RELATIVE:
-            return f"mem[bp + {self.addr}]"
-        else:
-            assert False, f"Invalid param mode {self.mode} for dst"
+        return self.mode.code(self.addr)
 
     def store(self, mem: "Memory", value: int):
-        if self.mode is None or self.mode == ParamMode.POSITION:
-            mem[self.addr] = value
-        elif self.mode == ParamMode.RELATIVE:  # Relative
-            mem[self.addr + mem.relative_base] = value
-        else:
-            assert False, f"Invalid param mode {self.mode} for store"
+        self.mode.store(mem, self.addr, value)
 
     def load(self, mem: "Memory") -> int:
-        if self.mode is None or self.mode == ParamMode.POSITION:
-            return mem[self.addr]
-        elif self.mode == ParamMode.IMMEDIATE:
-            return self.addr
-        elif self.mode == ParamMode.RELATIVE:
-            return mem[self.addr + mem.relative_base]
-        else:
-            assert False, f"Invalid param mode {self.mode} for load"
+        return self.mode.load(mem, self.addr)
 
 
 class Memory:
@@ -84,22 +131,6 @@ class Memory:
     def relative_base(self, base: int):
         self._relative_base = base
 
-    @overload
-    def __getitem__(self, idx: slice) -> List[int]:
-        ...
-
-    @overload
-    def __getitem__(self, idx: SupportsIndex) -> int:
-        ...
-
-    def __getitem__(self, idx):  # type: ignore
-        if isinstance(idx, slice):
-            assert idx.stop is None or idx.stop < len(self._mem)
-        else:
-            if idx >= len(self._mem):
-                return 0
-        return self._mem.__getitem__(idx)
-
     def __len__(self):
         return len(self._mem)
 
@@ -113,7 +144,7 @@ class Memory:
 
     def __setitem__(self, idx: int, value: int):
         self.grow(idx + 1)
-        return self._mem.__setitem__(idx, value)
+        self._mem[idx] = value
 
 
 class Instr:
@@ -127,16 +158,39 @@ class Instr:
         assert cls.opcode not in cls.ops
         cls.ops[cls.opcode] = cls
 
-    def execute(self, machine: "Machine", params: List[Addr]):
+    def __init__(self, addr: int, machine: "Machine", param_modes: List[ParamMode]):
+        self.addr = addr
+        self.machine = machine
+        self.param_modes = param_modes
+
+    def execute(self):
         raise NotImplementedError()
+
+    def store(self, param_index: int, value: int):
+        self.param_modes[param_index].store(
+            self.machine.memory,
+            self.machine.memory._mem[self.addr + param_index + 1],
+            value,
+        )
+
+    def load(self, param_index: int) -> int:
+        return self.param_modes[param_index].load(
+            self.machine.memory, self.machine.memory._mem[self.addr + param_index + 1]
+        )
 
     def code(self, params: List[Addr]):
         param_strs = [param.code() for param in params]
         return f"{self.mnemonic} {', '.join(param_strs)}"
 
     @classmethod
-    def get(cls, opcode) -> "Instr":
-        return cls.ops[opcode]()
+    def get(cls, machine: "Machine", ip: int) -> "Instr":
+        op = machine.memory._mem[ip]
+        op_cls = cls.ops[op % 100]
+        param_modes = [
+            ParamMode(int(m)) for m in reversed(f"{op // 100:0{op_cls.nparams}}")
+        ]
+
+        return op_cls(ip, machine, param_modes)
 
 
 class Add(Instr):
@@ -144,9 +198,9 @@ class Add(Instr):
     mnemonic = "add"
     nparams = 3
 
-    def execute(self, machine: "Machine", params: List[Addr]):
-        memory = machine.memory
-        memory.store(params[2], memory.load(params[0]) + memory.load(params[1]))
+    def execute(self):
+        val = self.load(0) + self.load(1)
+        self.store(2, val)
 
 
 class Mul(Instr):
@@ -154,9 +208,8 @@ class Mul(Instr):
     mnemonic = "mul"
     nparams = 3
 
-    def execute(self, machine: "Machine", params: List[Addr]):
-        memory = machine.memory
-        memory.store(params[2], memory.load(params[0]) * memory.load(params[1]))
+    def execute(self):
+        self.store(2, self.load(0) * self.load(1))
 
 
 class Inp(Instr):
@@ -164,17 +217,15 @@ class Inp(Instr):
     mnemonic = "inp"
     nparams = 1
 
-    def execute(self, machine: "Machine", params: List[Addr]):
-
-        memory = machine.memory
-        inval = next(machine.input_it, None)
+    def execute(self):
+        inval = next(self.machine.input_it, None)
 
         if inval is None:
             # No input, stop and wait for more input
-            machine.running = False
-            machine.ip -= 2
+            self.machine.running = False
+            self.machine.ip -= 2
         else:
-            memory.store(params[0], inval)
+            self.store(0, inval)
 
 
 class Out(Instr):
@@ -182,9 +233,8 @@ class Out(Instr):
     mnemonic = "outp"
     nparams = 1
 
-    def execute(self, machine: "Machine", params: List[Addr]):
-        memory = machine.memory
-        machine.output.append(memory.load(params[0]))
+    def execute(self):
+        self.machine.output(self.load(0))
 
 
 class JumpIfTrue(Instr):
@@ -192,10 +242,9 @@ class JumpIfTrue(Instr):
     mnemonic = "jnz"
     nparams = 2
 
-    def execute(self, machine: "Machine", params: List[Addr]):
-        memory = machine.memory
-        if memory.load(params[0]) != 0:
-            machine.ip = memory.load(params[1])
+    def execute(self):
+        if self.load(0) != 0:
+            self.machine.ip = self.load(1)
 
 
 class JumpIfFalse(Instr):
@@ -203,10 +252,9 @@ class JumpIfFalse(Instr):
     mnemonic = "jz"
     nparams = 2
 
-    def execute(self, machine: "Machine", params: List[Addr]):
-        memory = machine.memory
-        if memory.load(params[0]) == 0:
-            machine.ip = memory.load(params[1])
+    def execute(self):
+        if self.load(0) == 0:
+            self.machine.ip = self.load(1)
 
 
 def unimplemented_compare(x, y) -> bool:
@@ -218,12 +266,11 @@ class Compare(Instr):
     nparams = 3
     compare = unimplemented_compare
 
-    def execute(self, machine: "Machine", params: List[Addr]):
-        memory = machine.memory
-        if self.__class__.compare(memory.load(params[0]), memory.load(params[1])):
-            memory.store(params[2], 1)
+    def execute(self):
+        if self.__class__.compare(self.load(0), self.load(1)):
+            self.store(2, 1)
         else:
-            memory.store(params[2], 0)
+            self.store(2, 0)
 
 
 class CompareLt(Compare):
@@ -243,9 +290,8 @@ class AdjustBase(Instr):
     mnemonic = "base"
     nparams = 1
 
-    def execute(self, machine: "Machine", params: List[Addr]):
-        memory = machine.memory
-        memory.relative_base += memory.load(params[0])
+    def execute(self):
+        self.machine.memory.relative_base += self.load(0)
 
 
 class Stop(Instr):
@@ -253,9 +299,9 @@ class Stop(Instr):
     mnemonic = "stop"
     nparams = 0
 
-    def execute(self, machine: "Machine", params: List[Addr]):
-        machine.running = False
-        machine.halted = True
+    def execute(self):
+        self.machine.running = False
+        self.machine.halted = True
 
 
 InstrLine = Tuple[int, Instr, List[Addr]]
@@ -267,7 +313,6 @@ class Machine:
         self.memory = Memory(memory)
         self.ip = 0
         self.input_it = iter([])
-        self.output = []
         self.running = False
         self.halted = False
 
@@ -284,32 +329,27 @@ class Machine:
         self.halted = False
         self.memory.relative_base = 0
 
-    def run(self, input=[]):
+    def run(self, input=[], output_callback: Optional[Callable[[int], None]] = None):
         self.input_it = iter(input)
-        self.output = []
+        out_list: List[int] = []
+        self.output = output_callback or (lambda x: out_list.append(x))
         self.running = True
         while self.running:
-            instr = Instr.get(self.memory[self.ip] % 100)
-            param_modes = [
-                ParamMode(int(m))
-                for m in f"{self.memory[self.ip] // 100:0{instr.nparams}}"
-            ]
+            instr = self.get_instr(self.ip)
             self.ip += 1
-            params = [
-                Addr(value, mode)
-                for value, mode in zip_longest(
-                    self.memory[self.ip : self.ip + instr.nparams],
-                    reversed(param_modes),
-                )
-            ]
-
             self.ip += instr.nparams
 
-            instr.execute(self, params)
-        return self.output
+            instr.execute()
+        return None if output_callback else out_list
 
-    def disasm(self) -> str:
-        return Disassembler(self.memory).to_string()
+    @functools.cache
+    def get_instr(self, ip: int) -> Instr:
+        instr = Instr.get(self, ip)
+
+        return instr
+
+    def disasm(self, extra_code_blocks=[]) -> str:
+        return Disassembler(self, extra_code_blocks).to_string()
 
 
 class Disassembler:
@@ -324,11 +364,12 @@ class Disassembler:
             param_strs = [param.code() for param in params]
             return f"{self.mnemonic} {self.opcode}, {', '.join(param_strs)}"
 
-    def __init__(self, memory: Memory):
-        self.memory = memory
-        self.disasm()
+    def __init__(self, machine: Machine, extra_code_blocks=[]):
+        self.machine = machine
+        self.memory = machine.memory
+        self.disasm(extra_code_blocks)
 
-    def disasm(self) -> InstrList:
+    def disasm(self, extra_code_blocks=[]):
         """
         Disassemble the program.
 
@@ -345,7 +386,10 @@ class Disassembler:
 
         while True:
             # Resolve jumps
-            new_code_starts = self.find_data_jumps()
+            new_code_starts = (
+                self.unprocessed_extra_code_blocks(extra_code_blocks)
+                | self.find_data_jumps()
+            )
 
             if len(new_code_starts) == 0:
                 break
@@ -358,6 +402,13 @@ class Disassembler:
             self.code.append(self.make_data_instr(block_end))
 
         self.var_block, self.local_var_blocks = self.resolve_vars()
+
+    def unprocessed_extra_code_blocks(self, extra_code_blocks):
+        return set(
+            b
+            for b in extra_code_blocks
+            if not self.addr_is_in_code(b, expect_jump_target=True)
+        )
 
     def to_string(self):
         return self.var_block + "\n".join(
@@ -388,8 +439,8 @@ class Disassembler:
     def make_data_instr(self, start: int, end=None) -> InstrLine:
         return (
             start,
-            Disassembler.Data(self.memory[start]),
-            [Addr(a, ParamMode.IMMEDIATE) for a in self.memory[start + 1 : end]],
+            Disassembler.Data(self.memory._mem[start]),
+            [Addr(a, ParamMode.IMMEDIATE) for a in self.memory._mem[start + 1 : end]],
         )
 
     def label(self, ip: int):
@@ -459,7 +510,7 @@ class Disassembler:
             if p.addr not in self.addrs:
                 self.var_idx += 1
                 self.addrs[p.addr] = f"var_{self.var_idx}"
-                value = self.memory[p.addr]
+                value = self.memory._mem[p.addr]
                 var_def = f"@{self.addrs[p.addr]} = mem[{p.addr}]  # {value}\n"
 
             p.name = self.addrs[p.addr]
@@ -511,20 +562,18 @@ class Disassembler:
 
     def disasm_at_addr(self, ip: int) -> Tuple[InstrList, int]:
         code: InstrList = []
-        data_start = -1
         while ip < len(self.memory._mem):
-            op = self.memory[ip]
+            op = self.memory._mem[ip]
             try:
-                instr = Instr.get(op % 100)
-            except KeyError as e:
-                data_start = ip
+                instr = Instr.get(self.machine, ip)
+            except KeyError:
                 break
 
-            param_modes = list(map(int, f"{op // 100:0{instr.nparams}}"))
+            param_modes = [ParamMode(int(i)) for i in f"{op // 100:0{instr.nparams}}"]
             params = [
                 Addr(value, mode)
                 for value, mode in zip_longest(
-                    self.memory[ip + 1 : ip + 1 + instr.nparams],
+                    self.memory._mem[ip + 1 : ip + 1 + instr.nparams],
                     reversed(param_modes),
                 )
             ][: instr.nparams]
@@ -532,4 +581,4 @@ class Disassembler:
 
             ip += 1 + instr.nparams
 
-        return code, data_start
+        return code, ip
