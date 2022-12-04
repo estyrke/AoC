@@ -4,21 +4,21 @@ from typing import cast
 import requests
 from urllib.parse import urljoin
 import sys
-from . import logging
+from . import log
 from datetime import datetime
 import time
 
 from aoc.util import base_url, session_cookie
 
 
-logger = logging.getLogger(__name__)
+logger = log.getLogger(__name__)
 
 
 def main():
     year = int(sys.argv[1])
     day = int(sys.argv[2])
 
-    logging.init_logging()
+    log.init_logging()
 
     get(year, day)
 

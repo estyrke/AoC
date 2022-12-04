@@ -3,7 +3,7 @@ from io import StringIO
 from aoc.get import get
 
 from aoc.legacy_runner import LegacyRunner
-from . import logging
+from . import log
 import os
 import sys
 import importlib
@@ -17,7 +17,7 @@ import requests
 
 from aoc.util import base_url, convert_tag_to_md, session_cookie
 
-logger = logging.getLogger(__name__)
+logger = log.getLogger(__name__)
 
 
 class Runner:
@@ -146,7 +146,7 @@ class Runner:
 
 
 def main():
-    logging.init_logging()
+    log.init_logging()
     year = int(sys.argv[1])
     day = int(sys.argv[2])
     part = int(sys.argv[3])

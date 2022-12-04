@@ -1,6 +1,6 @@
 from datetime import datetime
 from io import StringIO
-from . import logging
+from . import log
 import os
 import sys
 import importlib
@@ -16,7 +16,7 @@ from aoc.util import base_url, convert_tag_to_md, session_cookie
 from aoc.get import get
 
 
-logger = logging.getLogger(__name__)
+logger = log.getLogger(__name__)
 
 
 class LegacyRunner:
@@ -142,7 +142,7 @@ class LegacyRunner:
 
 
 def main():
-    logging.init_logging()
+    log.init_logging()
     year = int(sys.argv[1])
     day = int(sys.argv[2])
     part = int(sys.argv[3])
