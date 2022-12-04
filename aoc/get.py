@@ -70,7 +70,7 @@ def get(year: int, day: int):
 def make_scaffold() -> str:
     basedir = os.path.dirname(__file__)
 
-    with open(f"{basedir}/solution_template.py") as tmpl:
+    with open(f"{basedir}/templates/solution_template.py") as tmpl:
         code = tmpl.read()
 
     return code
