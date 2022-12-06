@@ -32,7 +32,7 @@ def part1(inp: TextIOWrapper):
             print(line)
             n, from_stack, to_stack = parse(
                 "move {:d} from {:d} to {:d}", line.strip()
-            ).fixed
+            ).fixed  # type: ignore
             move = stacks[from_stack - 1][:n]
             stacks[to_stack - 1][0:0] = reversed(move)
             stacks[from_stack - 1][:n] = []
@@ -67,7 +67,7 @@ def part2(inp: TextIOWrapper):
             print(line)
             n, from_stack, to_stack = parse(
                 "move {:d} from {:d} to {:d}", line.strip()
-            ).fixed
+            ).fixed  # type: ignore
             move = stacks[from_stack - 1][:n]
             stacks[to_stack - 1][0:0] = move
             stacks[from_stack - 1][:n] = []
