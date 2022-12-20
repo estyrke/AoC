@@ -63,10 +63,12 @@ part2_test_input = part1_test_input
 
 part2_test_output = 56000011
 
+from z3 import *
+
 
 def part2(inp: TextIOWrapper):
     sensors = {}
-    beacons = defaultdict(set)
+    beacons = set()
     search_range = 20 if IS_TEST else 4000000
     blocked_ranges = [list() for y in range(search_range + 1)]
 
@@ -75,22 +77,23 @@ def part2(inp: TextIOWrapper):
     ):
         sx, sy, bx, by = tokens
         dist = abs(sx - bx) + abs(sy - by)
-        for r in range(search_range + 1):
-            y_dist = abs(sy - r)
-            if y_dist <= dist:
-                x_dist = dist - y_dist
-                blocked_ranges[r].append((sx - x_dist, sx + x_dist + 1))
-        sensors[(sx, sy)] = (bx, by)
-        beacons[(bx, by)].add((sx, sy))
+        sensors[(sx, sy)] = dist
+        beacons.add((bx, by))
 
-    for y in range(search_range + 1):
-        row = sorted(blocked_ranges[y])
-        x = 0
-        for r in row:
-            if r[0] > x:
-                print(x, y)
-                return x * 4000000 + y
-            else:
-                x = max(x, r[1])
-                if x > search_range:
-                    break
+    x, y = Int("x"), Int("y")
+    s = Solver()
+    s.add(x >= 0, x <= search_range)
+    s.add(y >= 0, y <= search_range)
+    for (sx, sy), d in sensors.items():
+        dist = Abs(x - sx) + Abs(y - sy)
+        s.add(dist > d)
+
+    for bx, by in beacons:
+        s.add((x, y) != (bx, by))
+
+    print(s.check())
+    m = s.model()
+    x_s = m[x].as_long()
+    y_s = m[y].as_long()
+    print(x_s, y_s)
+    return x_s * 4000000 + y_s

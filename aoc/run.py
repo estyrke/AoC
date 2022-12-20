@@ -101,6 +101,7 @@ class Runner:
 
         test_ok = None
         try:
+            mod.__dict__["IS_TEST"] = True
             test_answer = mod.__dict__[f"part{self.part}"](StringIO(test_input))
         except KeyboardInterrupt:
             logger.warning("Interrupted")
@@ -123,6 +124,7 @@ class Runner:
         answer = None
         with open(self.input_filename) as inp:
             try:
+                mod.__dict__["IS_TEST"] = False
                 answer = mod.__dict__[f"part{part}"](inp)
             except KeyboardInterrupt:
                 logger.warning("Interrupted!")
