@@ -1,8 +1,13 @@
 # My Advent of Code solutions
 
+Most of these are as I wrote them initially (trying to be as fast as I can), meaning the code is really yucky. Some are written with less time pressure,
+especially everything 2020 and before (I did not participate "in real time" before 2021), and may look nicer.
+
+Some solutions have been modified after the fact, this may or may not be indicated in the commit messages.
+
 ## Helper scripts
 
-There are some scripts to help me. They require some environmennt variables, that can preferably be set by creating a `.env` file in the repo root with the following contents:
+There are some scripts to help me. They require some environment variables; they can be set by creating a `.env` file in the repo root with the following contents:
 
 ```
 SESSION_COOKIE=<adventofcode.com session cookie>
