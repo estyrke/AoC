@@ -1,7 +1,6 @@
 import requests
 from datetime import datetime, timedelta
 from yachalk import chalk
-import sys
 import click
 
 from aoc.util import leaderboard_year, me, session_cookie, leaderboard_url
@@ -45,7 +44,7 @@ def main(day: int, count: int):
 
     found_me = False
     for i, m in enumerate(members):
-        name = (m["name"] or m["id"])[:20]
+        name = (m["name"] or str(m["id"]))[:20]
         if name == ME:
             name = chalk.green(name)
             found_me = True
