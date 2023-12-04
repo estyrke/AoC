@@ -33,3 +33,7 @@ build-backend = "poetry.core.masonry.api"
 aoc_get = "aoc.get:main"
 aoc_run = "aoc.run:main"
 aoc_leaderboard = "aoc.leaderboard:main"
+
+[tool.ruff]
+select = [ "E", "F", "PLW" ]
+ignore = [ "E741" ]
