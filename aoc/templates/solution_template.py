@@ -1,8 +1,5 @@
-from io import TextIOWrapper
-import math
-import functools
-import itertools
-from ..tools import parse_input
+from io import StringIO, TextIOWrapper
+import sys
 
 part1_test_input = """"""
 
@@ -29,3 +26,9 @@ def part2(inp: TextIOWrapper):
     answer = None
 
     return answer
+
+
+if __name__ == "__main__":
+    inp = sys.stdin.read()
+    print(part1(StringIO(inp)))
+    print(part2(StringIO(inp)))
