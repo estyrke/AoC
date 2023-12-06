@@ -1,4 +1,5 @@
-from io import TextIOWrapper
+from io import StringIO, TextIOWrapper
+import sys
 
 part1_test_input = """seeds: 79 14 55 13
 
@@ -39,8 +40,6 @@ part1_test_output = 35
 
 
 def part1(inp: TextIOWrapper):
-    answer = None
-
     maps = {}
     map = None
     map_name = None
@@ -82,7 +81,6 @@ def part1(inp: TextIOWrapper):
                     # No more matches
                     break
 
-        print(dst)
         dsts.append(dst)
 
     return min(dsts)
@@ -110,13 +108,7 @@ def part2(inp: TextIOWrapper):
             map.append([int(x) for x in line.strip().split()])
     if map:
         maps[map_name] = sorted(map, key=lambda x: x[1])
-    # print(maps)
-    # lines = [l for l in inp.readlines()]
-    # for tokens in parse_input(inp, ""):
-    # lines = [tokens for tokens in parse_input(inp, "")]
-    dsts = []
     ranges = list(zip(seeds[0::2], seeds[1::2]))
-    print(ranges)
     for map_name in [
         "seed-to-soil",
         "soil-to-fertilizer",
@@ -146,6 +138,11 @@ def part2(inp: TextIOWrapper):
             if curr < low + num:
                 new_ranges.append((curr, low + num - curr))
         ranges = sorted(new_ranges)
-        print(ranges)
 
     return ranges[0][0]
+
+
+if __name__ == "__main__":
+    inp = sys.stdin.read()
+    print(part1(StringIO(inp)))
+    print(part2(StringIO(inp)))
