@@ -13,9 +13,8 @@ from typing import Optional
 from urllib.parse import urljoin
 import traceback
 
-import requests
 
-from aoc.util import base_url, convert_tag_to_md, session_cookie
+from aoc.util import base_url, convert_tag_to_md, create_session
 
 logger = log.getLogger(__name__)
 
@@ -55,8 +54,7 @@ class Runner:
             self.post_answer(answer)
 
     def post_answer(self, answer):
-        s = requests.session()
-        s.cookies.set("session", session_cookie())
+        s = create_session()
         logger.info(f"Posting answer {answer} to {self.answer_url}")
         with s.post(self.answer_url, data={"level": self.part, "answer": answer}) as u:
             print(convert_tag_to_md(u.text, "article"))
@@ -77,7 +75,7 @@ class Runner:
 
         test_ok = self.run_test(mod)
 
-        if test_ok == False:
+        if test_ok is False:
             return None
 
         if self.part == 2 and self.answer_part_1 is None:
@@ -98,6 +96,12 @@ class Runner:
 
         if not test_input:
             return None
+
+        assert isinstance(test_input, str)
+
+        # The real input always ends with a newline, so ensure the test input does too
+        if not test_input.endswith("\n"):
+            test_input = test_input + "\n"
 
         test_ok = None
         try:
@@ -155,7 +159,8 @@ def main():
     test = len(sys.argv) >= 5 and sys.argv[4] == "test"
 
     if year in [2020, 2021]:
-        # 2021 and 2020 used a different file layout (I have been doing AoC retroactively "backwards" from 2021)
+        # 2021 and 2020 used a different file layout (I have been doing AoC
+        # retroactively "backwards" from 2021)
         return LegacyRunner(year, day, part).run(test, True)
 
     Runner(year, day, part).run(test, True)

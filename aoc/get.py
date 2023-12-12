@@ -1,14 +1,13 @@
 from logging import StreamHandler
 import os
 from typing import cast
-import requests
 from urllib.parse import urljoin
 import sys
 from . import log
 from datetime import datetime
 import time
 
-from aoc.util import base_url, session_cookie
+from aoc.util import base_url, create_session
 
 
 logger = log.getLogger(__name__)
@@ -47,8 +46,7 @@ def get(year: int, day: int):
     finally:
         logger.info("")
 
-    s = requests.session()
-    s.cookies.set("session", session_cookie())
+    s = create_session()
 
     if not os.path.exists(input_filename):
         logger.info("Getting input from %s", input_url)

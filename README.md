@@ -16,16 +16,26 @@ PRIVATE_LEADERBOARD_ID=<id of private leaderboard>
 PRIVATE_LEADERBOARD_YEAR=<year of leaderboard>
 ```
 
+These scripts follow the automation guidelines on the [/r/adventofcode community wiki](https://www.reddit.com/r/adventofcode/wiki/faqs/automation). Specifically:
+
+- Outbound calls are only made manually as part of submission and initial input download. The leaderboard script caches the data it downloads for 15 minutes.
+- Once inputs are downloaded, they are cached locally on disk. If you suspect your input is corrupted, you can force a new download by deleting the corresponding input file.
+- The `User-Agent` header in `aoc.util.create_session()` is set to me since I maintain this repo.
+
 ### `aoc_get`
 
-`aoc_get <year> <day>` downloads the description and input for the given day and creates code skeletons for parts 1 (and 2 if available).
+`aoc_get <year> <day>` downloads the input for the given day and creates a code skeleton.
 
 ### `aoc_run`
 
-`aoc_run <year> <day> <part>` runs a given solution and posts the answer to the site.
+`aoc_run <year> <day> <part>` runs a given solution (downloading first if not existing) and eventually posts the answer to the site. The script watches for changes in the solution file and tries to run it after every save. For a solution to be posted, it must pass the following conditions:
+
+- It runs to completion
+- It returns the correct response for the example given in the solution file (`part_<n>_test_input` should result in `part_<n>_test_output`). Note: if `part_<n>_test_output` is `None`, no such test will be performed
+- For part two, it returns a different result than part 1 (to avoid accidentally submitting copy/pasted part 1)
 
 `aoc_run <year> <day> <part> test` runs a given solution and prints the computed answer but does not post it.
 
 ### `aoc_leaderboard`
 
-`aoc_leaderboard [day]` fetches and prints a private leaderboard specified in the `.env` file. If no day is given, sorts by local score, else sorts by gold star time for the given day.
+`aoc_leaderboard` fetches and prints a private leaderboard specified in the `.env` file. See `aoc_leaderboard --help` for options.

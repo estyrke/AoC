@@ -1,10 +1,11 @@
 import os
 from typing import Optional, cast
 from bs4.element import Tag
-from markdownify import MarkdownConverter, markdownify as md
+from markdownify import MarkdownConverter
 from bs4 import BeautifulSoup
 import textwrap
 from dotenv import load_dotenv
+import requests
 
 
 load_dotenv()
@@ -36,6 +37,13 @@ def convert_tag_to_md(full_html: str, tag: str, index=1) -> Optional[str]:
     return MyConverter(heading_style="ATX").convert(description).strip()
 
 
+def create_session():
+    s = requests.session()
+    s.cookies.set("session", session_cookie())
+    s.headers["User-Agent"] = "github.com/estyrke/AoC by emil.styrke@gmail.com"
+    return s
+
+
 def session_cookie():
     return os.getenv("SESSION_COOKIE")
 
@@ -48,18 +56,21 @@ def base_url():
     return "https://adventofcode.com"
 
 
-def leaderboard_url():
-    board_id = os.getenv("PRIVATE_LEADERBOARD_ID")
-    year = os.getenv("PRIVATE_LEADERBOARD_YEAR")
-    if board_id is None:
-        print("PRIVATE_LEADERBOARD_ID environment variable is not set!")
-        return None
-    if year is None:
-        print("PRIVATE_LEADERBOARD_YEAR environment variable is not set!")
-        return None
-
+def leaderboard_url(board_id: str, year: int):
     return f"https://adventofcode.com/{year}/leaderboard/private/view/{board_id}.json"
 
 
 def leaderboard_year() -> int:
-    return int(os.getenv("PRIVATE_LEADERBOARD_YEAR", 0))
+    year = os.getenv("PRIVATE_LEADERBOARD_YEAR")
+    if year is None:
+        print("PRIVATE_LEADERBOARD_YEAR environment variable is not set!")
+        return 0
+    return int(year)
+
+
+def leaderboard_id() -> str:
+    board_id = os.getenv("PRIVATE_LEADERBOARD_ID")
+    if board_id is None:
+        print("PRIVATE_LEADERBOARD_ID environment variable is not set!")
+        return ""
+    return board_id

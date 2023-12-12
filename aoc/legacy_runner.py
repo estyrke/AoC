@@ -10,9 +10,8 @@ from typing import Optional
 from urllib.parse import urljoin
 import traceback
 
-import requests
 
-from aoc.util import base_url, convert_tag_to_md, session_cookie
+from aoc.util import base_url, convert_tag_to_md, create_session
 from aoc.get import get
 
 
@@ -60,8 +59,7 @@ class LegacyRunner:
             self.post_and_get_next(answer)
 
     def post_and_get_next(self, answer):
-        s = requests.session()
-        s.cookies.set("session", session_cookie())
+        s = create_session()
         logger.info(f"Posting answer {answer} to {self.answer_url}")
         with s.post(self.answer_url, data={"level": self.part, "answer": answer}) as u:
             print(convert_tag_to_md(u.text, "article"))
@@ -79,7 +77,7 @@ class LegacyRunner:
 
         test_ok = self.run_test(mod)
 
-        if test_ok == False:
+        if test_ok is False:
             return None
         answer = self.run_real(mod)
 
