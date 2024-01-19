@@ -9,7 +9,7 @@
       "type": "python",
       "request": "launch",
       "module": "aoc.run",
-      "args": ["2019", "2", "1", "test"]
+      "args": ["${input:year}", "${input:day}", "${input:part}", "test"]
     },
     {
       "name": "Python: Current File",
@@ -17,6 +17,27 @@
       "request": "launch",
       "program": "${file}",
       "console": "integratedTerminal"
+    }
+  ],
+  "inputs": [
+    {
+      "description": "Year to run",
+      "id": "year",
+      "type": "pickString",
+      "options": ["2023", "2022", "2021", "2020", "2019"],
+      "default": "2023"
+    },
+    {
+      "description": "Day to run",
+      "id": "day",
+      "type": "promptString"
+    },
+    {
+      "description": "Part to run",
+      "id": "part",
+      "type": "pickString",
+      "options": ["1", "2"],
+      "default": "2"
     }
   ]
 }
