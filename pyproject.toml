@@ -2,7 +2,7 @@
 name = "aoc"
 version = "0.1.0"
 description = "Advent of Code"
-authors = [ "Emil Styrke <emil.styrke@gmail.com>" ]
+authors = ["Emil Styrke <emil.styrke@gmail.com>"]
 
 [tool.poetry.dependencies]
 python = ">=3.12,<4.0"
@@ -25,10 +25,10 @@ matplotlib = "^3.8.2"
 graphviz = "^0.20.1"
 
 [tool.poetry.group.dev.dependencies]
-ruff = "^0.1.6"
+ruff = "^0.8.1"
 
 [build-system]
-requires = [ "poetry-core>=1.0.0" ]
+requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
@@ -37,6 +37,6 @@ aoc_run = "aoc.run:main"
 aoc_leaderboard = "aoc.leaderboard:main"
 
 [tool.ruff]
-select = [ "E", "F", "PLW" ]
-ignore = [ "E741" ]
+select = ["E", "F", "PLW"]
+ignore = ["E741"]
 line-length = 120

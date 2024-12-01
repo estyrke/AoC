@@ -38,11 +38,7 @@ def main(day: int | None, count: int):
 
     file = directory / f"{board_id}_{year}.json"
 
-    if (
-        file.exists()
-        and datetime.fromtimestamp(file.stat().st_mtime) + timedelta(minutes=15)
-        > datetime.now()
-    ):
+    if file.exists() and datetime.fromtimestamp(file.stat().st_mtime) + timedelta(minutes=15) > datetime.now():
         print(f"Using cache dated {datetime.fromtimestamp(file.stat().st_mtime)}")
         with open(file) as fp:
             contents = json.load(fp)
@@ -105,12 +101,7 @@ def calculate_stars_str(members, day):
                 .get("get_star_ts", FUTURE_TS),
             )
             for i, m in enumerate(ranked):
-                if (
-                    not m["completion_day_level"]
-                    .get(str(d), {})
-                    .get(part, {})
-                    .get("get_star_ts", False)
-                ):
+                if not m["completion_day_level"].get(str(d), {}).get(part, {}).get("get_star_ts", False):
                     m["stars_str"] += "-"
                 elif i < 10:
                     m["stars_str"] += str(i + 1)[-1]
@@ -124,18 +115,8 @@ def sort_by_local_score(m):
 
 def sort_by_day(day: int):
     def sort(m):
-        silver_star_ts = (
-            m["completion_day_level"]
-            .get(str(day), dict())
-            .get("1", {})
-            .get("get_star_ts", FUTURE_TS)
-        )
-        gold_star_ts = (
-            m["completion_day_level"]
-            .get(str(day), dict())
-            .get("2", {})
-            .get("get_star_ts", FUTURE_TS)
-        )
+        silver_star_ts = m["completion_day_level"].get(str(day), dict()).get("1", {}).get("get_star_ts", FUTURE_TS)
+        gold_star_ts = m["completion_day_level"].get(str(day), dict()).get("2", {}).get("get_star_ts", FUTURE_TS)
         return -gold_star_ts, -silver_star_ts, m["local_score"]
 
     return sort

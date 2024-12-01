@@ -39,7 +39,8 @@ def convert_tag_to_md(full_html: str, tag: str, index=1) -> Optional[str]:
 
 def create_session():
     s = requests.session()
-    s.cookies.set("session", session_cookie())
+    if (cookie := session_cookie()) is not None:
+        s.cookies.set("session", cookie)
     s.headers["User-Agent"] = "github.com/estyrke/AoC by emil.styrke@gmail.com"
     return s
 
