@@ -1,4 +1,4 @@
-from io import StringIO, TextIOWrapper
+from io import StringIO, TextIOBase
 import sys
 
 part1_test_input = """"""
@@ -6,7 +6,7 @@ part1_test_input = """"""
 part1_test_output = None
 
 
-def part1(inp: TextIOWrapper):
+def part1(inp: TextIOBase):
     answer = None
 
     # for line in inp.readlines():
@@ -22,7 +22,7 @@ part2_test_input = part1_test_input
 part2_test_output = None
 
 
-def part2(inp: TextIOWrapper):
+def part2(inp: TextIOBase):
     answer = None
 
     return answer
