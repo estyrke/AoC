@@ -1,36 +1,35 @@
 import functools
-from io import TextIOWrapper
+from io import TextIOBase
 import itertools
+import logging
 from typing import (
-    Dict,
     List,
-    NamedTuple,
     Optional,
-    Sequence,
     Set,
-    SupportsIndex,
     Tuple,
-    overload,
     Callable,
 )
-from enum import Enum, IntEnum
-from collections import namedtuple
+from enum import Enum
 from itertools import zip_longest
 import operator
-import re
+
+logger = logging.getLogger(__name__)
 
 
 class PositionParam:
     @staticmethod
     def store(mem: "Memory", addr: int, value: int):
+        logger.debug(f"Position store to {addr}: {value}")
         try:
             mem._mem[addr] = value
         except IndexError:
+            logger.debug(f"Growing memory to {addr + 1}")
             mem.grow(addr + 1)
             mem._mem[addr] = value
 
     @staticmethod
     def load(mem: "Memory", addr: int) -> int:
+        logger.debug(f"Position load from {addr}: {mem._mem[addr]}")
         return mem._mem[addr]
 
     @staticmethod
@@ -41,7 +40,7 @@ class PositionParam:
 class ImmediateParam:
     @staticmethod
     def store(mem: "Memory", addr: int, value: int):
-        assert False, f"Invalid param mode Immediate for store"
+        assert False, "Invalid param mode Immediate for store"
 
     @staticmethod
     def load(mem: "Memory", addr: int) -> int:
@@ -55,15 +54,19 @@ class ImmediateParam:
 class RelativeParam:
     @staticmethod
     def store(mem: "Memory", addr: int, value: int):
+        logger.debug(f"Relative store to {mem.relative_base} + {addr}: {addr + mem.relative_base} <- {value}")
         try:
             mem._mem[addr + mem.relative_base] = value
         except IndexError:
+            logger.debug(f"Growing memory to {addr + mem.relative_base + 1}")
             mem.grow(addr + mem.relative_base + 1)
             mem._mem[addr + mem.relative_base] = value
 
     @staticmethod
     def load(mem: "Memory", addr: int) -> int:
-        return mem._mem[addr + mem.relative_base]
+        value = mem._mem[addr + mem.relative_base]
+        logger.debug(f"Relative load from {mem.relative_base} + {addr}: {addr + mem.relative_base} -> {value}")
+        return value
 
     @staticmethod
     def code(addr: int) -> str:
@@ -135,12 +138,10 @@ class Memory:
         return len(self._mem)
 
     def grow(self, size):
-        assert size < 10 * 2 ** 20, f"Too large block allocation {size/2**20} MiB"
+        assert size < 10 * 2**20, f"Too large block allocation {size/2**20} MiB"
 
         if size > len(self._mem):
-            self._mem[len(self._mem) : size] = itertools.repeat(
-                0, size - len(self._mem)
-            )
+            self._mem[len(self._mem) : size] = itertools.repeat(0, size - len(self._mem))
 
     def __setitem__(self, idx: int, value: int):
         self.grow(idx + 1)
@@ -162,6 +163,11 @@ class Instr:
         self.addr = addr
         self.machine = machine
         self.param_modes = param_modes
+
+    def __str__(self):
+        print(self.param_modes, self.machine.memory._mem[self.addr : self.addr + 4])
+        params = [Addr(self.machine.memory._mem[self.addr + i + 1], mode) for i, mode in enumerate(self.param_modes)]
+        return f"{self.addr:5} {self.code(params)}"
 
     def execute(self):
         raise NotImplementedError()
@@ -321,7 +327,7 @@ class Machine:
         return cls(list(map(int, mem_str.strip().split(","))))
 
     @classmethod
-    def from_stream(cls, stream: TextIOWrapper) -> "Machine":
+    def from_stream(cls, stream: TextIOBase) -> "Machine":
         return cls.from_str(stream.read())
 
     def reset(self):
@@ -339,6 +345,7 @@ class Machine:
             self.ip += 1
             self.ip += instr.nparams
 
+            logger.debug(f"Executing {instr}")
             instr.execute()
         return None if output_callback else out_list
 
@@ -373,8 +380,9 @@ class Disassembler:
         """
         Disassemble the program.
 
-        Assumes there is first a block of code and then (when first encountering a value that is not a legal instruction)
-        a block of data.  When there are jumps into data then a new code block is generated at the target address."""
+        Assumes there is first a block of code and then (when first encountering a value that is not a legal
+        instruction) a block of data.  When there are jumps into data then a new code block is generated at
+        the target address."""
 
         self.label_idx = 0
         self.jump_dests = {}
@@ -386,10 +394,7 @@ class Disassembler:
 
         while True:
             # Resolve jumps
-            new_code_starts = (
-                self.unprocessed_extra_code_blocks(extra_code_blocks)
-                | self.find_data_jumps()
-            )
+            new_code_starts = self.unprocessed_extra_code_blocks(extra_code_blocks) | self.find_data_jumps()
 
             if len(new_code_starts) == 0:
                 break
@@ -404,16 +409,11 @@ class Disassembler:
         self.var_block, self.local_var_blocks = self.resolve_vars()
 
     def unprocessed_extra_code_blocks(self, extra_code_blocks):
-        return set(
-            b
-            for b in extra_code_blocks
-            if not self.addr_is_in_code(b, expect_jump_target=True)
-        )
+        return set(b for b in extra_code_blocks if not self.addr_is_in_code(b, expect_jump_target=True))
 
     def to_string(self):
         return self.var_block + "\n".join(
-            f"{self.label(ip)}{ip:5} {instr.code(params)}"
-            for ip, instr, params in self.code
+            f"{self.label(ip)}{ip:5} {instr.code(params)}" for ip, instr, params in self.code
         )
 
     def find_data_jumps(self):
@@ -422,9 +422,7 @@ class Disassembler:
             if instr.mnemonic in ["jz", "jnz"]:
                 if params[1].mode != ParamMode.IMMEDIATE:
                     if params[1].mode != ParamMode.RELATIVE or params[1].addr != 0:
-                        print(
-                            f"Warning: dynamic jump from address {ip} to {params[1].code()}"
-                        )
+                        print(f"Warning: dynamic jump from address {ip} to {params[1].code()}")
                     continue
                 self.label_idx += 1
                 dest = params[1].addr
@@ -468,9 +466,7 @@ class Disassembler:
                     local_var_addr = 0
                 elif relative_base != 0:
                     if self.addr_is_in_code(relative_base):
-                        print(
-                            f"Warning: Relative base pointer {relative_base} is inside code block!"
-                        )
+                        print(f"Warning: Relative base pointer {relative_base} is inside code block!")
                     # Disregard first base pointer set
                     local_vars = [None] * base_adj
                     local_var_addr = ip
@@ -478,13 +474,9 @@ class Disassembler:
                 relative_base += base_adj
             for param_idx, p in enumerate(params):
                 if p.mode == ParamMode.POSITION:
-                    var_block += self.resolve_position_var(
-                        p, param_idx == len(params) - 1
-                    )
+                    var_block += self.resolve_position_var(p, param_idx == len(params) - 1)
                 elif p.mode == ParamMode.RELATIVE and local_var_addr != 0:
-                    local_var_blocks[local_var_addr] += self.resolve_relative_var(
-                        p, local_vars
-                    )
+                    local_var_blocks[local_var_addr] += self.resolve_relative_var(p, local_vars)
         return var_block, local_var_blocks
 
     def resolve_position_var(self, p: Addr, is_write: bool) -> str:
@@ -502,9 +494,7 @@ class Disassembler:
                 self.pvar_idx += 1
                 self.pvar_addrs[p.addr] = f"pvar_{self.pvar_idx}"
             param_modified = params[p.addr - ip - 1]
-            param_modified.name = param_modified.code().replace(
-                str(param_modified.addr), self.pvar_addrs[p.addr]
-            )
+            param_modified.name = param_modified.code().replace(str(param_modified.addr), self.pvar_addrs[p.addr])
             p.name = self.pvar_addrs[p.addr]
         else:
             if p.addr not in self.addrs:
@@ -524,9 +514,7 @@ class Disassembler:
             return lvar_def
 
         if local_addr > len(local_vars):
-            print(
-                f"Warning: Local addressing {-p.addr} outside stack segment of size {len(local_vars)}"
-            )
+            print(f"Warning: Local addressing {-p.addr} outside stack segment of size {len(local_vars)}")
             return ""
 
         if local_vars[local_addr] is None:
@@ -537,7 +525,7 @@ class Disassembler:
         return lvar_def
 
     def instr_at_address(self, addr: int) -> Optional[InstrLine]:
-        for (ip, instr, p) in self.code:
+        for ip, instr, p in self.code:
             if ip <= addr <= ip + len(p):
                 return ip, instr, p
         return None
@@ -551,13 +539,12 @@ class Disassembler:
         if instr.mnemonic == "data":
             if expect_jump_target:
                 print(
-                    f"Warning: jump target {addr} is in existing data block (at {ip}-{ip + len(p)})! This is not supperted."
+                    f"Warning: jump target {addr} is in existing data block (at {ip}-{ip + len(p)})!"
+                    " This is not supperted."
                 )
             return False
         if addr != ip and expect_jump_target:
-            print(
-                f"Warning: address {addr} does not target opcode! ({instr.code(p)} is at {ip})"
-            )
+            print(f"Warning: address {addr} does not target opcode! ({instr.code(p)} is at {ip})")
         return True
 
     def disasm_at_addr(self, ip: int) -> Tuple[InstrList, int]:
