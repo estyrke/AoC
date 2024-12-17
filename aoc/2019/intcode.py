@@ -165,7 +165,6 @@ class Instr:
         self.param_modes = param_modes
 
     def __str__(self):
-        print(self.param_modes, self.machine.memory._mem[self.addr : self.addr + 4])
         params = [Addr(self.machine.memory._mem[self.addr + i + 1], mode) for i, mode in enumerate(self.param_modes)]
         return f"{self.addr:5} {self.code(params)}"
 
@@ -191,10 +190,11 @@ class Instr:
     @classmethod
     def get(cls, machine: "Machine", ip: int) -> "Instr":
         op = machine.memory._mem[ip]
-        op_cls = cls.ops[op % 100]
-        param_modes = [
-            ParamMode(int(m)) for m in reversed(f"{op // 100:0{op_cls.nparams}}")
-        ]
+        try:
+            op_cls = cls.ops[op % 100]
+        except KeyError as e:
+            raise ValueError(f"Invalid opcode {op} at address {ip}") from e
+        param_modes = [ParamMode(int(m)) for m in reversed(f"{op // 100:0{op_cls.nparams}}")]
 
         return op_cls(ip, machine, param_modes)
 
@@ -553,7 +553,7 @@ class Disassembler:
             op = self.memory._mem[ip]
             try:
                 instr = Instr.get(self.machine, ip)
-            except KeyError:
+            except ValueError:
                 break
 
             param_modes = [ParamMode(int(i)) for i in f"{op // 100:0{instr.nparams}}"]
