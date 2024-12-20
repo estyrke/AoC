@@ -8,6 +8,7 @@ from typing import (
     Set,
     Tuple,
     Callable,
+    overload,
 )
 from enum import Enum
 from itertools import zip_longest
@@ -20,17 +21,12 @@ class PositionParam:
     @staticmethod
     def store(mem: "Memory", addr: int, value: int):
         logger.debug(f"Position store to {addr}: {value}")
-        try:
-            mem._mem[addr] = value
-        except IndexError:
-            logger.debug(f"Growing memory to {addr + 1}")
-            mem.grow(addr + 1)
-            mem._mem[addr] = value
+        mem[addr] = value
 
     @staticmethod
     def load(mem: "Memory", addr: int) -> int:
-        logger.debug(f"Position load from {addr}: {mem._mem[addr]}")
-        return mem._mem[addr]
+        logger.debug(f"Position load from {addr}: {mem[addr]}")
+        return mem[addr]
 
     @staticmethod
     def code(addr: int) -> str:
@@ -55,16 +51,11 @@ class RelativeParam:
     @staticmethod
     def store(mem: "Memory", addr: int, value: int):
         logger.debug(f"Relative store to {mem.relative_base} + {addr}: {addr + mem.relative_base} <- {value}")
-        try:
-            mem._mem[addr + mem.relative_base] = value
-        except IndexError:
-            logger.debug(f"Growing memory to {addr + mem.relative_base + 1}")
-            mem.grow(addr + mem.relative_base + 1)
-            mem._mem[addr + mem.relative_base] = value
+        mem[addr + mem.relative_base] = value
 
     @staticmethod
     def load(mem: "Memory", addr: int) -> int:
-        value = mem._mem[addr + mem.relative_base]
+        value = mem[addr + mem.relative_base]
         logger.debug(f"Relative load from {mem.relative_base} + {addr}: {addr + mem.relative_base} -> {value}")
         return value
 
@@ -117,8 +108,9 @@ class Addr:
 
 class Memory:
     def __init__(self, mem: List[int]):
-        self._mem = mem
+        self.__mem = mem
         self._relative_base = 0
+        self._protected_ranges = []
 
     def store(self, dst: Addr, value: int):
         dst.store(self, value)
@@ -135,17 +127,35 @@ class Memory:
         self._relative_base = base
 
     def __len__(self):
-        return len(self._mem)
+        return len(self.__mem)
 
     def grow(self, size):
         assert size < 10 * 2**20, f"Too large block allocation {size/2**20} MiB"
 
-        if size > len(self._mem):
-            self._mem[len(self._mem) : size] = itertools.repeat(0, size - len(self._mem))
+        if size > len(self.__mem):
+            self.__mem[len(self.__mem) : size] = itertools.repeat(0, size - len(self.__mem))
+
+    @overload
+    def __getitem__(self, idx: int) -> int: ...
+
+    @overload
+    def __getitem__(self, idx: slice) -> list[int]: ...
+
+    def __getitem__(self, idx: int | slice) -> int | list[int]:
+        return self.__mem[idx]
 
     def __setitem__(self, idx: int, value: int):
-        self.grow(idx + 1)
-        self._mem[idx] = value
+        if idx >= len(self.__mem):
+            logger.debug(f"Growing memory to size {idx + 1}")
+            self.grow(idx + 1)
+
+        # TODO: optimize?
+        if any(start <= idx < end for start, end in self._protected_ranges):
+            raise ValueError(f"Attempt to write to protected memory at address {idx}")
+        self.__mem[idx] = value
+
+    def protect(self, start_addr: int, end_addr: int):
+        self._protected_ranges.append((start_addr, end_addr))
 
 
 class Instr:
@@ -165,7 +175,7 @@ class Instr:
         self.param_modes = param_modes
 
     def __str__(self):
-        params = [Addr(self.machine.memory._mem[self.addr + i + 1], mode) for i, mode in enumerate(self.param_modes)]
+        params = [Addr(self.machine.memory[self.addr + i + 1], mode) for i, mode in enumerate(self.param_modes)]
         return f"{self.addr:5} {self.code(params)}"
 
     def execute(self):
@@ -174,14 +184,12 @@ class Instr:
     def store(self, param_index: int, value: int):
         self.param_modes[param_index].store(
             self.machine.memory,
-            self.machine.memory._mem[self.addr + param_index + 1],
+            self.machine.memory[self.addr + param_index + 1],
             value,
         )
 
     def load(self, param_index: int) -> int:
-        return self.param_modes[param_index].load(
-            self.machine.memory, self.machine.memory._mem[self.addr + param_index + 1]
-        )
+        return self.param_modes[param_index].load(self.machine.memory, self.machine.memory[self.addr + param_index + 1])
 
     def code(self, params: List[Addr]):
         param_strs = [param.code() for param in params]
@@ -189,7 +197,7 @@ class Instr:
 
     @classmethod
     def get(cls, machine: "Machine", ip: int) -> "Instr":
-        op = machine.memory._mem[ip]
+        op = machine.memory[ip]
         try:
             op_cls = cls.ops[op % 100]
         except KeyError as e:
@@ -355,6 +363,9 @@ class Machine:
 
         return instr
 
+    def protect_memory(self, start_addr: int, end_addr: int):
+        self.memory.protect(start_addr, end_addr)
+
     def disasm(self, extra_code_blocks=[]) -> str:
         return Disassembler(self, extra_code_blocks).to_string()
 
@@ -412,9 +423,25 @@ class Disassembler:
         return set(b for b in extra_code_blocks if not self.addr_is_in_code(b, expect_jump_target=True))
 
     def to_string(self):
-        return self.var_block + "\n".join(
+        code_str = self.var_block + "\n".join(
             f"{self.label(ip)}{ip:5} {instr.code(params)}" for ip, instr, params in self.code
         )
+
+        protect_start = 0
+        protect_blocks = []
+        for ip, instr, params in self.code:
+            if isinstance(instr, Disassembler.Data):
+                if ip > protect_start:
+                    protect_blocks.append(slice(protect_start, ip))
+                protect_start = ip + len(params) + 1
+            else:
+                pass
+        if protect_start < ip:
+            protect_blocks.append(slice(protect_start, ip + len(params) + 1))
+
+        for block in protect_blocks:
+            print(f"Read-only block: {block}")
+        return code_str
 
     def find_data_jumps(self):
         jumps_into_data: Set[int] = set()
@@ -437,8 +464,8 @@ class Disassembler:
     def make_data_instr(self, start: int, end=None) -> InstrLine:
         return (
             start,
-            Disassembler.Data(self.memory._mem[start]),
-            [Addr(a, ParamMode.IMMEDIATE) for a in self.memory._mem[start + 1 : end]],
+            Disassembler.Data(self.memory[start]),
+            [Addr(a, ParamMode.IMMEDIATE) for a in self.memory[start + 1 : end]],
         )
 
     def label(self, ip: int):
@@ -500,7 +527,7 @@ class Disassembler:
             if p.addr not in self.addrs:
                 self.var_idx += 1
                 self.addrs[p.addr] = f"var_{self.var_idx}"
-                value = self.memory._mem[p.addr]
+                value = self.memory[p.addr]
                 var_def = f"@{self.addrs[p.addr]} = mem[{p.addr}]  # {value}\n"
 
             p.name = self.addrs[p.addr]
@@ -549,8 +576,8 @@ class Disassembler:
 
     def disasm_at_addr(self, ip: int) -> Tuple[InstrList, int]:
         code: InstrList = []
-        while ip < len(self.memory._mem):
-            op = self.memory._mem[ip]
+        while ip < len(self.memory):
+            op = self.memory[ip]
             try:
                 instr = Instr.get(self.machine, ip)
             except ValueError:
@@ -560,7 +587,7 @@ class Disassembler:
             params = [
                 Addr(value, mode)
                 for value, mode in zip_longest(
-                    self.memory._mem[ip + 1 : ip + 1 + instr.nparams],
+                    self.memory[ip + 1 : ip + 1 + instr.nparams],
                     reversed(param_modes),
                 )
             ][: instr.nparams]
