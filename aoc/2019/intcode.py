@@ -94,10 +94,10 @@ class Addr:
         self.mode = mode
         self.name = None
 
-    def code(self):
+    def code(self) -> tuple[str, list[str]]:
         if self.name is not None:
-            return self.name
-        return self.mode.code(self.addr)
+            return self.name, [self.mode.code(self.addr)]
+        return self.mode.code(self.addr), []
 
     def store(self, mem: "Memory", value: int):
         self.mode.store(mem, self.addr, value)
@@ -191,9 +191,11 @@ class Instr:
     def load(self, param_index: int) -> int:
         return self.param_modes[param_index].load(self.machine.memory, self.machine.memory[self.addr + param_index + 1])
 
-    def code(self, params: List[Addr]):
-        param_strs = [param.code() for param in params]
-        return f"{self.mnemonic} {', '.join(param_strs)}"
+    def code(self, params: List[Addr]) -> str:
+        param_tuples = [param.code() for param in params]
+        param_strs = [p[0] for p in param_tuples]
+        param_annotations = [p for p in param_tuples for p in p[1]]
+        return f"{self.mnemonic} {', '.join(param_strs)}  # {', '.join(param_annotations)}"
 
     @classmethod
     def get(cls, machine: "Machine", ip: int) -> "Instr":
@@ -378,8 +380,8 @@ class Disassembler:
         def __init__(self, first_data: int):
             self.opcode = first_data
 
-        def code(self, params: List[Addr]):
-            param_strs = [param.code() for param in params]
+        def code(self, params: List[Addr]) -> str:
+            param_strs = [param.code()[0] for param in params]
             return f"{self.mnemonic} {self.opcode}, {', '.join(param_strs)}"
 
     def __init__(self, machine: Machine, extra_code_blocks=[]):
@@ -410,12 +412,12 @@ class Disassembler:
             if len(new_code_starts) == 0:
                 break
             new_code_start = sorted(new_code_starts)[0]
-            self.code.append(self.make_data_instr(block_end, new_code_start))
+            self.code.extend(self.make_data_instrs(block_end, new_code_start))
             new_code, block_end = self.disasm_at_addr(new_code_start)
             self.code += new_code
 
         if block_end < len(self.memory):
-            self.code.append(self.make_data_instr(block_end))
+            self.code.extend(self.make_data_instrs(block_end))
 
         self.var_block, self.local_var_blocks = self.resolve_vars()
 
@@ -461,12 +463,16 @@ class Disassembler:
 
         return jumps_into_data
 
-    def make_data_instr(self, start: int, end=None) -> InstrLine:
-        return (
-            start,
-            Disassembler.Data(self.memory[start]),
-            [Addr(a, ParamMode.IMMEDIATE) for a in self.memory[start + 1 : end]],
-        )
+    def make_data_instrs(self, start: int, end: int | None = None) -> list[InstrLine]:
+        end = end or len(self.memory)
+        return [
+            (
+                start,
+                Disassembler.Data(self.memory[start]),
+                [Addr(a, ParamMode.IMMEDIATE) for a in self.memory[start + 1 : min(end, start + 16)]],
+            )
+            for start in range(start, end, 16)
+        ]
 
     def label(self, ip: int):
         labeled = ""
@@ -478,7 +484,7 @@ class Disassembler:
 
     def resolve_vars(self):
         var_block = ""
-        local_vars = []
+        local_vars: list[str | None] = []
         local_var_blocks = {}
         local_var_addr = 0
         relative_base = 0
@@ -521,7 +527,7 @@ class Disassembler:
                 self.pvar_idx += 1
                 self.pvar_addrs[p.addr] = f"pvar_{self.pvar_idx}"
             param_modified = params[p.addr - ip - 1]
-            param_modified.name = param_modified.code().replace(str(param_modified.addr), self.pvar_addrs[p.addr])
+            param_modified.name = param_modified.code()[0].replace(str(param_modified.addr), self.pvar_addrs[p.addr])
             p.name = self.pvar_addrs[p.addr]
         else:
             if p.addr not in self.addrs:
@@ -533,7 +539,7 @@ class Disassembler:
             p.name = self.addrs[p.addr]
         return var_def
 
-    def resolve_relative_var(self, p, local_vars):
+    def resolve_relative_var(self, p: Addr, local_vars: list[str | None]):
         lvar_def = ""
         local_addr = -p.addr
         if local_addr <= 0:
@@ -546,7 +552,7 @@ class Disassembler:
 
         if local_vars[local_addr] is None:
             local_vars[local_addr] = f"lvar_{local_addr}"
-            lvar_def = f"@{local_vars[local_addr]} = {p.code()}\n"
+            lvar_def = f"@{local_vars[local_addr]} = {p.code()[0]}\n"
 
         p.name = local_vars[local_addr]
         return lvar_def
@@ -569,6 +575,8 @@ class Disassembler:
                     f"Warning: jump target {addr} is in existing data block (at {ip}-{ip + len(p)})!"
                     " This is not supperted."
                 )
+                # We treat this as if the jump is valid.
+                return True
             return False
         if addr != ip and expect_jump_target:
             print(f"Warning: address {addr} does not target opcode! ({instr.code(p)} is at {ip})")
