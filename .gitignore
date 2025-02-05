@@ -3,3 +3,4 @@ __pycache__
 .vscode/settings.json
 *_input.txt
 .leaderboard_cache/
+uiua/cached_inputs/
