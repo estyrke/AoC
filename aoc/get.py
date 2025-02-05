@@ -1,5 +1,5 @@
 from logging import StreamHandler
-import os
+from pathlib import Path
 from typing import cast
 from urllib.parse import urljoin
 import sys
@@ -23,16 +23,15 @@ def main():
 
 
 def get(year: int, day: int):
+    day_url = urljoin(base_url(), f"{year}/day/{day}")
     input_url = urljoin(base_url(), f"{year}/day/{day}/input")
 
-    basedir = os.path.dirname(__file__)
-    input_filename = f"{basedir}/{year}/{day}_input.txt"
-    solution_py_filename = f"{basedir}/{year}/{day}.py"
+    basedir = Path(__file__).parent
+    input_filename = basedir / str(year) / f"{day}_input.txt"
+    solution_py_filename = basedir / str(year) / f"{day}.py"
 
     # Wait for puzzle start
-    puzzle_start = datetime.fromisoformat(
-        f"{year}-12-{day:02}T05:00:01+00:00"
-    ).astimezone()
+    puzzle_start = datetime.fromisoformat(f"{year}-12-{day:02}T05:00:01+00:00").astimezone()
     try:
         while datetime.now().astimezone() < puzzle_start:
             time_left = puzzle_start - datetime.now().astimezone()
@@ -47,28 +46,29 @@ def get(year: int, day: int):
         logger.info("")
 
     s = create_session()
+    logger.info("Scaffolding puzzle at %s", day_url)
 
-    if not os.path.exists(input_filename):
+    if not input_filename.exists():
+        input_filename.parent.mkdir(parents=True, exist_ok=True)
         logger.info("Getting input from %s", input_url)
-
         with s.get(input_url) as u:
             if u.text.startswith("Please don't"):
                 logger.error("Puzzle not available yet!")
                 return
-            with open(input_filename, "w") as input_txt:
+            with input_filename.open("w") as input_txt:
                 input_txt.write(u.text)
 
-    if not os.path.exists(solution_py_filename):
+    if not solution_py_filename.exists():
         logger.info(f"Generating code scaffold for day {day}")
         code = make_scaffold()
-        with open(solution_py_filename, "w") as solution_py:
+        with solution_py_filename.open("w") as solution_py:
             solution_py.write(code)
 
 
 def make_scaffold() -> str:
-    basedir = os.path.dirname(__file__)
+    basedir = Path(__file__).parent
 
-    with open(f"{basedir}/templates/solution_template.py") as tmpl:
+    with (basedir / "templates" / "solution_template.py").open() as tmpl:
         code = tmpl.read()
 
     return code

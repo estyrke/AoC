@@ -1,7 +1,7 @@
 from datetime import datetime
 from io import StringIO
+from pathlib import Path
 from . import log
-import os
 import sys
 import importlib
 from time import sleep
@@ -20,9 +20,9 @@ logger = log.getLogger(__name__)
 
 class LegacyRunner:
     def __init__(self, year: int, day: int, part: int):
-        basedir = os.path.dirname(__file__)
-        self.part_filename = f"{basedir}/{year}/{day}_{part}.py"
-        self.input_filename = f"{basedir}/{year}/{day}_input.txt"
+        basedir = Path(__file__).parent
+        self.part_filename = basedir / str(year) / f"{day}_{part}.py"
+        self.input_filename = basedir / str(year) / f"{day}_input.txt"
         self.answer_url = urljoin(base_url(), f"{year}/day/{day}/answer")
         self.mod_name = f"aoc.{year}.{day}_{part}"
         mod_name_part_1 = f"aoc.{year}.{day}_1"
@@ -31,7 +31,7 @@ class LegacyRunner:
         self.day = day
         self.part = part
 
-        if not os.path.exists(self.part_filename):
+        if not self.part_filename.exists():
             get(year, day)
 
         if part == 2:
@@ -82,9 +82,7 @@ class LegacyRunner:
         answer = self.run_real(mod)
 
         if self.part == 2 and answer == self.answer_part_1:
-            logger.warning(
-                f"Answer {answer} for part 2 is the same as for part 1 - NOT posting!"
-            )
+            logger.warning(f"Answer {answer} for part 2 is the same as for part 1 - NOT posting!")
             return None
         return answer
 
@@ -131,7 +129,7 @@ class LegacyRunner:
 
     def wait_for_change(self, prev_mtime: Optional[datetime]) -> datetime:
         while True:
-            st = os.stat(self.part_filename)
+            st = self.part_filename.stat()
             mtime = datetime.fromtimestamp(st.st_mtime)
 
             if mtime != prev_mtime:

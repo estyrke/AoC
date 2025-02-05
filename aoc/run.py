@@ -1,10 +1,10 @@
 from datetime import datetime
 from io import StringIO
+from pathlib import Path
 from aoc.get import get
 
 from aoc.legacy_runner import LegacyRunner
 from . import log
-import os
 import sys
 import importlib
 from time import sleep
@@ -21,9 +21,9 @@ logger = log.getLogger(__name__)
 
 class Runner:
     def __init__(self, year: int, day: int, part: int):
-        basedir = os.path.dirname(__file__)
-        self.solution_filename = f"{basedir}/{year}/{day}.py"
-        self.input_filename = f"{basedir}/{year}/{day}_input.txt"
+        basedir = Path(__file__).parent
+        self.solution_filename = (basedir / str(year) / str(day)).with_suffix(".py")
+        self.input_filename = basedir / str(year) / f"{day}_input.txt"
         self.answer_url = urljoin(base_url(), f"{year}/day/{day}/answer")
         self.mod_name = f"aoc.{year}.{day}"
 
@@ -31,7 +31,7 @@ class Runner:
         self.day = day
         self.part = part
 
-        if not os.path.exists(self.solution_filename):
+        if not self.solution_filename.exists():
             get(year, day)
 
         self.answer_part_1 = None
@@ -84,9 +84,7 @@ class Runner:
         answer = self.run_real(mod, self.part)
 
         if self.part == 2 and answer == self.answer_part_1:
-            logger.warning(
-                f"Answer {answer} for part 2 is the same as for part 1 - NOT posting!"
-            )
+            logger.warning(f"Answer {answer} for part 2 is the same as for part 1 - NOT posting!")
             return None
         return answer
 
@@ -143,7 +141,7 @@ class Runner:
 
     def wait_for_change(self, prev_mtime: Optional[datetime]) -> datetime:
         while True:
-            st = os.stat(self.solution_filename)
+            st = self.solution_filename.stat()
             mtime = datetime.fromtimestamp(st.st_mtime)
 
             if mtime != prev_mtime:
