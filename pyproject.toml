@@ -23,6 +23,7 @@ numpy = "^1.26.2"
 scipy = "^1.11.4"
 matplotlib = "^3.8.2"
 graphviz = "^0.20.1"
+shapely = "^2.1.2"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.8.1"
@@ -40,3 +41,5 @@ aoc_leaderboard = "aoc.leaderboard:main"
 extend-select = ["E", "F", "PLW"]
 ignore = ["E741"]
 line-length = 120
+
+[tool.pyrefly]
