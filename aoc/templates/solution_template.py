@@ -1,5 +1,5 @@
+import fileinput
 from io import StringIO, TextIOBase
-import sys
 
 part1_test_input = """"""
 
@@ -29,6 +29,6 @@ def part2(inp: TextIOBase):
 
 
 if __name__ == "__main__":
-    inp = sys.stdin.read()
+    inp = "".join(fileinput.input(encoding="utf-8"))
     print(part1(StringIO(inp)))
     print(part2(StringIO(inp)))
